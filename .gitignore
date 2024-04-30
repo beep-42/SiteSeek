@@ -1,0 +1,5 @@
+/src/__pycache__/*
+/src/ProSPECCTs results/*
+/src/Superimposed
+*.pickle
+/src/*.pickle
