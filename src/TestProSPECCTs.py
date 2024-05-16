@@ -18,6 +18,7 @@ from timeit import default_timer as timer
 from Helpers import *
 
 DATASET_PATH = '../../prospeccts'
+RESULTS_DIR = 'ProSPECCTs results/'
 SEED = 0
 
 
@@ -133,8 +134,8 @@ def get_transposed_and_query_ligand_distance(db_name, pdb_code_hit, rot, trans, 
     return np.linalg.norm((hit_ligand @ rot + trans) - query_ligand)
 
 
-def process_prospeccts():
-    dataset = 'NMR_structures'
+def process_and_test_prospeccts(dataset):
+
     cutoff = 4  # distance cutoff for residues to be considered part of the pocket, angstroms
 
     db = load_db(dataset)
@@ -191,11 +192,10 @@ def process_prospeccts():
 
             results_log.append(results[result_id])
 
-            if result_id == '1gvrA' or result_id == '3p74A':
-                if 'ligand_dist' in results[result_id]:
-                    if results[result_id]['ligand_dist'] < 3 and result_id in inactive[struct_id]:
-                        write_superimposed(dataset, result_id, struct_id, results[result_id]['mapping'], results[result_id]['rot'], results[result_id]['trans'])
-
+            # if result_id == '1gvrA' or result_id == '3p74A':
+            #     if 'ligand_dist' in results[result_id]:
+            #         if results[result_id]['ligand_dist'] < 3 and result_id in inactive[struct_id]:
+            #             write_superimposed(dataset, result_id, struct_id, results[result_id]['mapping'], results[result_id]['rot'], results[result_id]['trans'])
 
 
     RocCurveDisplay.from_predictions(expected, scores)
@@ -204,7 +204,7 @@ def process_prospeccts():
 
     print(f"Total elapsed time during searching: {elapsed}, total compared: {len(results_log)}, time per comparison: {elapsed/len(results_log)*1000} ms.")
 
-    with open(f'ProSPECCTs results/{dataset}.pickle', 'wb') as f:
+    with open(f'{RESULTS_DIR}{dataset}.pickle', 'wb') as f:
         pickle.dump(results_log, f)
 
 def write_superimposed(dataset_name, id1, id2, mapping, rot, trans, prefix=''):
@@ -246,5 +246,8 @@ def write_superimposed(dataset_name, id1, id2, mapping, rot, trans, prefix=''):
     io.set_structure(struct2)
     io.save(target_file)
 
+
 if __name__ == '__main__':
-    process_prospeccts()
+
+    dataset = 'NMR_structures'  # or any other dataset from the ProSPECCTs benchmark
+    process_and_test_prospeccts(dataset)

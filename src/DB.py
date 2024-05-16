@@ -1,3 +1,9 @@
+#!/usr/bin/env python3
+"""
+The database module containing the database interface for db initiation and searching. For more information on usage
+see the README.md.
+"""
+
 import RandomConsensusAligner
 import TetraHedronAligner
 from Clustering import Clustering
@@ -17,6 +23,15 @@ from tqdm import tqdm
 
 from MostCommonMappingAligner import MostCommonMappingAligner
 from Scoring import score_hit
+
+
+__author__ = "Jakub Telcer"
+__copyright__ = "Copyright 2024, Jakub Telcer"
+__credits__ = ["Jakub Telcer"]
+__license__ = "MIT"
+__maintainer__ = "Jakub Telcer"
+__email__ = "telcerj@natur.cuni.cz"
+__status__ = "Demo"
 
 
 class DB:
@@ -134,13 +149,47 @@ class DB:
         return potential_matches
 
     def kmer_cluster_svd_search(self, template_positions: list[np.ndarray],
-                                seq: str,
-                                site: list[int],
-                                k_mer_min_found_fraction: float,
-                                k_mer_similarity_threshold: float,
-                                cavity_scale_error: float,
-                                min_kmer_in_cavity_fraction: float,
-                                icp_rounds: int):
+                   seq: str,
+                   site: list[int],
+                   k_mer_min_found_fraction: float,
+                   k_mer_similarity_threshold: float,
+                   cavity_scale_error: float,
+                   min_kmer_in_cavity_fraction: float,
+                   align_rounds: int,
+                   align_sufficient_samples: int,
+                   align_delta: float,
+                   icp_rounds: int,
+                   icp_cutoff: float):
+
+        """
+        Searches the entire database for matches and returns them.
+
+        :param template_positions: List of vectors of positions of residues in the query structures
+        :param seq: The sequence of the query structure
+        :param site: List of indices of the residues participating in the ligand binding (indices of pocket residues)
+        :param k_mer_min_found_fraction: Minimal allowed fraction of all similar Kmers found in the target sequence,
+        compared to the total count of searched Kmers originating from the query cavity (all Kmers around residues
+        defined in the site list)
+        :param k_mer_similarity_threshold: What is the minimal similarity between Kmers to be considered similar and
+        to be potentially mapped on each other. Similarity is the sum of scores from the BLOSUM 62 table for each
+        pair of aligned residues in directly aligned Kmers (with no shifts or gaps).
+        :param cavity_scale_error: Scale factor for the possible change of size of the target cavity compared to the
+        query cavity. Measured as the fraction of the largest distance of any two residues in the cavities.
+        :param min_kmer_in_cavity_fraction: The minimal allowed fraction of similar Kmers in the target cavity to be
+        considered as a potentially similar cavity. Measured as fraction of Kmers in the target to the number of Kmers
+        from the query cavity.
+        :param align_rounds: The number of rounds to perform using the RandomConsensusAligner
+        :param align_sufficient_samples: After how many successful overlaps to terminate
+        :param align_delta: the allowed fractional error of the distance between labeled points (centers of Kmers) in
+        the target cavity and distance between points in the query cavity, normalized to the distance in the query
+        cavity.
+        :param icp_rounds: How many rounds of the Iterative Closest Point algorithm to perform
+        :param icp_cutoff: Maximal distance of two similar Kmers to be still mapped in the Iterative Closest Point
+        algorithm
+
+        :return: A list of dicts of scores and various metrics and information for each found hit. The results might
+        contain multiple hits from a single structure (multiple putative pockets).
+        """
 
         kmers_dict = generate_similar_kmers_around(seq, site, k_mer_similarity_threshold)
         all_kmers = []
@@ -185,7 +234,7 @@ class DB:
             #                                                                                                             )
 
             rmsd, rot, trans, mapping, rounds, votes, avg_dev, rms_dev, med_dev = RCAligner.match_to_source(
-                potential_matches, self.pos[hit], allowed_error=.15, rounds=100, stop_at=5)
+                potential_matches, self.pos[hit], allowed_error=align_delta, rounds=align_rounds, stop_at=align_sufficient_samples)
 
             if rot is None:  # no hit
                 continue
@@ -196,17 +245,25 @@ class DB:
                                                                          self.pos[hit],
                                                                          template_positions,
                                                                          rot, trans,
-                                                                         cutoff=10)
+                                                                         cutoff=icp_cutoff)
             if mapping is None:
                 continue
 
-            score = self.compute_mapping_similarity_score(mapping, self.seqs[hit], seq)
+            sim_score = self.compute_mapping_similarity_score(mapping, self.seqs[hit], seq)
+
+            found_kmer_fraction = kmer_found[hit] / len(site)
+            mapping_coverage = len(mapping) / len(site)
+            votes_ratio = votes / len(site)
+            score = score_hit(found_kmer_fraction, mapping_coverage, votes_ratio, self.kdtrees[hit],
+                          self.pos[hit], template_positions, self.seqs[hit], seq, site, mapping,
+                          rot, trans)
 
             successful_hits.append({
                 'hit_id': self.ids[hit],
+                'score': score,
                 'found kmers': kmer_found[hit],
                 'found kmer frac': kmer_found[hit] / len(site),
-                'similarity score': score,
+                'kmer similarity score': sim_score,
                 'rmsd': rmsd,
                 'coverage': len(mapping) / len(site),
                 'mapping': mapping,
@@ -236,6 +293,38 @@ class DB:
                    icp_rounds: int,
                    icp_cutoff: float,
                    ids_to_score: list[str]) -> defaultdict[dict]:
+
+        """
+        Calculates scores for each structure ID supplied in ids_to_score list. Structures that do not receive any score
+        (due e.g., low similar Kmer content) receive a default score of -1.
+
+        :param template_positions: List of vectors of positions of residues in the query structures
+        :param seq: The sequence of the query structure
+        :param site: List of indices of the residues participating in the ligand binding (indices of pocket residues)
+        :param k_mer_min_found_fraction: Minimal allowed fraction of all similar Kmers found in the target sequence,
+        compared to the total count of searched Kmers originating from the query cavity (all Kmers around residues
+        defined in the site list)
+        :param k_mer_similarity_threshold: What is the minimal similarity between Kmers to be considered similar and
+        to be potentially mapped on each other. Similarity is the sum of scores from the BLOSUM 62 table for each
+        pair of aligned residues in directly aligned Kmers (with no shifts or gaps).
+        :param cavity_scale_error: Scale factor for the possible change of size of the target cavity compared to the
+        query cavity. Measured as the fraction of the largest distance of any two residues in the cavities.
+        :param min_kmer_in_cavity_fraction: The minimal allowed fraction of similar Kmers in the target cavity to be
+        considered as a potentially similar cavity. Measured as fraction of Kmers in the target to the number of Kmers
+        from the query cavity.
+        :param align_rounds: The number of rounds to perform using the RandomConsensusAligner
+        :param align_sufficient_samples: After how many successful overlaps to terminate
+        :param align_delta: the allowed fractional error of the distance between labeled points (centers of Kmers) in
+        the target cavity and distance between points in the query cavity, normalized to the distance in the query
+        cavity.
+        :param icp_rounds: How many rounds of the Iterative Closest Point algorithm to perform
+        :param icp_cutoff: Maximal distance of two similar Kmers to be still mapped in the Iterative Closest Point
+        algorithm
+        :param ids_to_score: list of ids to score against the query
+
+        :return: A dictionary of dicts of scores and found rotation, translation and mapping (when applicable) for
+        each ID from the ids_to_score list.
+        """
 
         results = defaultdict(dict)
         for sid in ids_to_score:
