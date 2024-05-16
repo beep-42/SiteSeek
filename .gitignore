@@ -3,3 +3,5 @@
 /src/Superimposed
 *.pickle
 /src/*.pickle
+/src/.idea
+/src/.ipynb_checkpoints
