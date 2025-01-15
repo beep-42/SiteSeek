@@ -1,3 +1,6 @@
+**Warning: This repository is under active development and no release is currently available!**
+Please note that the repository is still in development and the code is subject to change. Use at your own risk.
+
 # SiteSeek
 
 A proof-of-concept tool for searching of large protein structure databases without the need of prediction of all the putative binding sites.
