@@ -15,7 +15,7 @@ jobs:
     steps:
 
     - name: build and push
-    - uses: docker/build-push-action@v6
-    - with:
+      uses: docker/build-push-action@v6
+      with:
           push: true
           tags: beep42/siteseek:latest
