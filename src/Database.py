@@ -614,6 +614,4 @@ class Database:
         with lzma.open(file_path, "rb") as file:
             db: Database = pickle.load(file)
 
-        db.kmer_db.bypass_pickle_view()
-
         return db
