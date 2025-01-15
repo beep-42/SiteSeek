@@ -4,3 +4,8 @@ scikit-learn==1.5.0
 tqdm==4.66.3
 biotite~=1.0.1
 click~=8.1.8
+line_profiler~=4.2.0
+typing_extensions~=4.12.2
+scipy~=1.15.1
+matplotlib~=3.8.3
+requests~=2.32.3
