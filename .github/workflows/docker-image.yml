@@ -13,6 +13,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag site-seek-dev-pub:$(date +%s)
+
+    - name: build and push
+    - uses: docker/build-push-action@v6
+    - with:
+          push: true
+          tags: beep42/siteseek:latest
