@@ -1,8 +1,8 @@
-/src/__pycache__/*
-/src/ProSPECCTs results/*
-/src/Superimposed
+src/__pycache__/*
+src/ProSPECCTs results/*
+src/Superimposed
 *.pickle
-/src/*.pickle
-/src/.idea
-/src/.ipynb_checkpoints
-/venv/*
+src/*.pickle
+src/.idea
+src/.ipynb_checkpoints
+venv/*
