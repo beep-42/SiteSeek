@@ -158,4 +158,4 @@ Contact: telcerj@natur.cuni.cz
 
 ## License
 
-This software is distributed under the MIT License, see LICENSE.txt.
+This software is distributed under the GNU GPL v3 License, see LICENSE.
