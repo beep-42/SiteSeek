@@ -1,5 +1,4 @@
 import pickle
-
 import Bio.PDB.Structure
 from Bio import PDB
 import numpy as np

@@ -1,5 +1,6 @@
 from Bio.Align import substitution_matrices
 from Bio.Data.IUPACData import protein_letters
+from functools import lru_cache
 
 BLOSUM62 = substitution_matrices.load("BLOSUM62")
 
@@ -130,16 +131,25 @@ def generate_similar_kmers(kmer: str, threshold: float, scoring_matrix=BLOSUM62)
     return generate([kmer])
 
 
+@lru_cache(maxsize=None)
 def generate_similar_kmers_around(sequence: str, pivots: list[int], threshold: float, k: int = 3,
-                                  scoring_matrix=BLOSUM62) -> dict[str, list[str]]:
+                                  scoring_matrix=BLOSUM62) -> (tuple[str], dict[str, list[str]], dict[str, dict[str, int]]):
 
+    kmer_list = list()
     all_kmers = {}
+    all_kmers_rated = {}
     for kmer in generate_kmers_around(sequence, pivots, k=k):
-        all_kmers[kmer] = generate_similar_kmers(kmer, threshold=threshold, scoring_matrix=scoring_matrix)
+        all_kmers[kmer] = set(generate_similar_kmers(kmer, threshold=threshold, scoring_matrix=scoring_matrix))
+        kmer_list.append(kmer)
 
-    return all_kmers
+        all_kmers_rated[kmer] = dict()
+        for one in all_kmers[kmer]:
+            all_kmers_rated[kmer][one] = score_seq_similarity(one, kmer)
+
+    return tuple(kmer_list), all_kmers, all_kmers_rated
 
 
+@lru_cache(maxsize=None)
 def score_seq_similarity(seq1: str, seq2: str, scoring_matrix=BLOSUM62) -> float:
     s = 0
     for i in range(min(len(seq1), len(seq2))):

@@ -46,8 +46,9 @@ The included Jupyter notebooks were used for the data analysis and the figure ge
 To use the database, firstly import it and initialize it using:
 
 ```python3
-from DB import DB
-db = DB()
+from Database import Database
+
+db = Database()
 ```
 
 To add a structure, use:

@@ -5,3 +5,4 @@
 /src/*.pickle
 /src/.idea
 /src/.ipynb_checkpoints
+/venv/*

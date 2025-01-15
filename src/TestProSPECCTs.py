@@ -3,22 +3,19 @@ from collections import defaultdict
 
 import csv
 import Helpers
-from DB import DB
-import pickle
+from Database import Database, Result
 from tqdm import tqdm
-from Bio import PDB
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 import os
 from matplotlib import pyplot as plt
 from sklearn.metrics import RocCurveDisplay
 import random
-import numpy as np
 from timeit import default_timer as timer
-
 from Helpers import *
 
+
 DATASET_PATH = '../../prospeccts'
-RESULTS_DIR = 'ProSPECCTs results/'
+RESULTS_DIR = '../ProSPECCTs results/'
 SEED = 0
 
 
@@ -31,7 +28,7 @@ def load_db(name):
         with open(f'database_{name}.picle', 'rb') as file:
             db = pickle.load(file)
     except:
-        db = DB()
+        db = Database()
         # index_folder("3ECs", db)
         # IndexFolder('1kStructs', db)
         index_folder_pdb(f'{DATASET_PATH}/{name}/{name}', db)
@@ -106,23 +103,26 @@ def struct_2_seq(structure):
     return s
 
 
-def index_folder_pdb(path, db):
-    parser = PDB.PDBParser(QUIET=True)
-    for folder in os.walk(path):
+def index_folder_pdb(path: str, db: Database):
+    # parser = PDB.PDBParser(QUIET=True)
+    # for folder in os.walk(path):
+    #
+    #     direc = folder[0]
+    #     files = folder[2]
+    #
+    #     print(f'Indexing folder {direc}...')
+    #
+    #     print(f"Total files: {len(files)}")
+    #
+    #     for file in tqdm(files):
+    #         db.add_file(os.path.join(direc, file), file.split('.')[0])
+    #         # # print(direc + '/' + file)
+    #         # struct = parser.get_structure(file, direc + '/' + file)
+    #         # seq = struct_2_seq(struct)
+    #         # name = file.split('.')[0]
+    #         # db.add(name, seq, struct)
 
-        direc = folder[0]
-        files = folder[2]
-
-        print(f'Indexing folder {direc}...')
-
-        print(f"Total files: {len(files)}")
-
-        for file in tqdm(files):
-            # print(direc + '/' + file)
-            struct = parser.get_structure(file, direc + '/' + file)
-            seq = struct_2_seq(struct)
-            name = file.split('.')[0]
-            db.add(name, seq, struct)
+    db.add_dir(path)
 
 
 def get_transposed_and_query_ligand_distance(db_name, pdb_code_hit, rot, trans, pdb_code_query):
@@ -138,7 +138,14 @@ def process_and_test_prospeccts(dataset):
 
     cutoff = 4  # distance cutoff for residues to be considered part of the pocket, angstroms
 
-    db = load_db(dataset)
+    # db: Database = load_db(dataset)
+
+    db: Database = Database()
+    db.add_from_directory(f'{DATASET_PATH}/{dataset}/{dataset}/')
+    # db.save(f'db-{dataset}.lzma')
+
+    # db = Database.load(f'db-{dataset}.lzma')
+
     active, inactive, all_ids = load_similarity_dicts(dataset)
 
     expected = []
@@ -148,55 +155,79 @@ def process_and_test_prospeccts(dataset):
 
     elapsed = 0
 
-    for struct_id in tqdm(all_ids, desc='running all comparisons'):
+    # filter = HardKMerFilter(k_mer_min_found_fraction=.5)
+    # clustering = ClusteringOptics(cavity_scale_error=1,
+    #                             min_kmer_in_cavity_fraction=.01,
+    #                               top_k=1)
+    # mapper = RandomConsensusMapper(allowed_error=.15,
+    #                                rounds=1500,
+    #                                stop_at=15,
+    #                                polygon=3)
+    # refiner = None #ICP(rounds=0,
+    #                 #cutoff=10,)
 
-        print(f"Processing {struct_id}")
+    for struct_id in tqdm(all_ids[:30], desc='running all comparisons'):
+
+        # print(f"Processing {struct_id}")
         db_id = db.pdb_code_to_index[struct_id]
         struct = get_struct(dataset, struct_id)
         # site = Helpers.get_ligand_contacts_with_cashing(dataset, struct_id, struct, cutoff)
         site = Helpers.get_ligand_contacts_np(struct, cutoff)
         for resi in site.copy():
-            if resi >= len(db.seqs[db_id]): site.remove(resi)
+            if resi >= len(db.sequences[db_id]): site.remove(resi)
         if len(site) == 0: continue  # why is this happening?
 
         check_only = active[struct_id] + inactive[struct_id]
         start = timer()
-        results = db.score_list(template_positions=db.pos[db_id],
-                                seq=db.seqs[db_id],
-                                site=site,
-                                k_mer_min_found_fraction=.5,
-                                k_mer_similarity_threshold=13,
-                                cavity_scale_error=1.2,
-                                min_kmer_in_cavity_fraction=.05,
-                                align_rounds=1000,
-                                align_sufficient_samples=15,
-                                align_delta=0.15,
-                                icp_rounds=3,
-                                icp_cutoff=10,
-                                ids_to_score=check_only)
+        results = db.search(struct_id, site, k_mer_similarity_threshold=14, search_subset=check_only, lr=.25)
         end = timer()
         elapsed += end - start
 
-        for result_id in results.keys():
+
+        best_results_per_structure = {}
+        for result in results:
+            if result.structure_id in best_results_per_structure:
+                if best_results_per_structure[result.structure_id].score < result.score:
+                    best_results_per_structure[result.structure_id] = result
+
+            else:
+                best_results_per_structure[result.structure_id] = result
+                # if result.rotation is not None:
+                #     best_results_per_structure[result.structure_id].ligand_dist = 0 # get_transposed_and_query_ligand_distance(dataset, result.structure_id,
+                                                                                    #         result.rotation,
+                                                                                    #         result.translation,
+                                                                                    #         struct_id)
+
+        for result_id in best_results_per_structure.keys():
 
             expected.append(result_id in active[struct_id])
-            scores.append(results[result_id]['score'])
+            scores.append(best_results_per_structure[result_id].score)
 
-            results[result_id]['label'] = 'positive' if result_id in active[struct_id] else 'negative'
-            if 'rot' in results[result_id]:
-                results[result_id]['ligand_dist'] = get_transposed_and_query_ligand_distance(dataset, result_id,
-                                                                                             results[result_id]['rot'],
-                                                                                             results[result_id][
-                                                                                                 'trans'],
+            best_results_per_structure[result_id].label = 'positive' if result_id in active[struct_id] else 'negative'
+
+            # Add the distance of the superposed ligands
+            if best_results_per_structure[result_id].rotation is not None:
+                best_results_per_structure[result_id].ligand_dist = get_transposed_and_query_ligand_distance(dataset, result_id,
+                                                                                             best_results_per_structure[result_id].rotation,
+                                                                                             best_results_per_structure[result_id].translation,
                                                                                              struct_id)
 
-            results_log.append(results[result_id])
+                if best_results_per_structure[result_id].ligand_dist > 5: scores[-1] = -1    # mark as FP
+
+            results_log.append(best_results_per_structure[result_id])
 
             # if result_id == '1gvrA' or result_id == '3p74A':
             #     if 'ligand_dist' in results[result_id]:
             #         if results[result_id]['ligand_dist'] < 3 and result_id in inactive[struct_id]:
             #             write_superimposed(dataset, result_id, struct_id, results[result_id]['mapping'], results[result_id]['rot'], results[result_id]['trans'])
 
+        for id in check_only:
+            if id not in best_results_per_structure:
+                res = Result(id, -1, -1, None, None, None)
+                res.label = 'positive' if id in active[struct_id] else 'negative'
+                results_log.append(res)
+                expected.append(id in active[struct_id])
+                scores.append(-1)
 
     RocCurveDisplay.from_predictions(expected, scores)
 
@@ -249,5 +280,5 @@ def write_superimposed(dataset_name, id1, id2, mapping, rot, trans, prefix=''):
 
 if __name__ == '__main__':
 
-    dataset = 'NMR_structures'  # or any other dataset from the ProSPECCTs benchmark
+    dataset = 'review' + '_structures'  # or any other dataset from the ProSPECCTs benchmark
     process_and_test_prospeccts(dataset)
