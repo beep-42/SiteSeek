@@ -107,9 +107,13 @@ class KmerMapperNumpy(object):
 class KmerMapperArray(object):
 
     def __init__(self, dtype = 'I'):
-        self.map = defaultdict(lambda: array.array(dtype))
+        self.dtype = dtype
+        self.map = defaultdict(self.get_array)
         self.amino_acid_codes = "ACDEFGHIKLMNPQRSTVWY"
         self.amino_acid_mappings = {self.amino_acid_codes[i]: i for i in range(len(self.amino_acid_codes))}
+
+    def get_array(self):
+        return array.array(self.dtype)
 
     def valid_kmer(self, kmer: str) -> bool:
         for letter in kmer:
