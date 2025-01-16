@@ -556,7 +556,7 @@ class Database:
 
     def search(self, structure_id: str | None, site: list[int], k_mer_similarity_threshold: float,
                search_subset: list[str] | None = None, positions: np.typing.NDArray = None, sequence: str = None,
-               lr: float = 0.9, progress: bool = True) -> List[Result]:
+               lr: float = 0.9, skip_clustering: bool = False, progress: bool = True) -> List[Result]:
         """
         Searches the database for similar substructures. The query is provided using Biopython's structure and indices
         of aminoacids forming the query substructures. The searched regions can be discontinuous.
@@ -586,8 +586,8 @@ class Database:
 
         clustering = ClusteringOptics(cavity_scale_error=1.1,
                                       min_kmer_in_cavity_fraction=.01,
-                                      top_k=None)
-        clustering = DummyClustering(top_k=5)
+                                      top_k=3)
+        if skip_clustering: clustering = DummyClustering(top_k=3)
 
         mapper = RandomConsensusMapper(allowed_error=.15,
                                        rounds=1500,
