@@ -78,6 +78,12 @@ class Result:
         self.translation = translation
         self.mapping = mapping
 
+    def __str__(self):
+        return f'{self.structure_id}\t{self.score:.{2}f}\t{str(self.mapping)}\n'
+
+    @staticmethod
+    def get_header():
+        return 'ID\tSCORE\tMAPPING\n'
 
 class Database:
     """

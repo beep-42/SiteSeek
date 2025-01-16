@@ -66,7 +66,9 @@ def search(database, query, site, likelihood_ratio, kmer_threshold, output):
         results = db.search(query, site=site, k_mer_similarity_threshold=kmer_threshold, lr=likelihood_ratio)
         click.echo(click.style(f'Done in {timer() - t :.{2}f} seconds. Found {len(results)} results.', fg='cyan', bold=True), err=True)
 
-        output.write(json.dumps(results))
+        # output.write(json.dumps(results))
+        output.write(Result.get_header())
+        output.write(''.join([str(x) for x in sorted(results, key=lambda x: x.score, reverse=True)]))
 
     except Exception as e:
         click.echo(click.style(f"Failed! Exception: {e}", fg='red', bold=True))
