@@ -31,17 +31,25 @@ class DistanceMatrix:
         otherwise (always upper triangular).
     """
 
-    def __init__(self, source_positions: np.ndarray) -> None:
+    def __init__(self, source_positions: np.ndarray, max_size: int = 2000) -> None:
         """
         Initializes the distance matrix (does not calculate any positions, only allocates the distance matrix).
 
         Args:
             source_positions: a numpy array of the source positions.
+            max_size: the maximum length of the source_positions to consider caching. For longer structures
+            all distances are computed.
         """
-        self.source_positions = source_positions
-        self.source_dist_matrix = np.zeros((len(source_positions), len(source_positions)))
 
-    def get_dist(self, i, j) -> float:
+        self.max_size = max_size
+        self.source_positions = source_positions
+        if max(source_positions.shape) <= self.max_size:
+            self.source_dist_matrix = np.zeros((len(source_positions), len(source_positions)), dtype=np.float64)
+            self.direct_compute = False
+        else:
+            self.direct_compute = True
+
+    def get_dist(self, i, j) -> np.float64:
         """
         Gets the distance between the i-th and j-th position in the source (calculates it if it was not calculated yet).
 
@@ -52,6 +60,9 @@ class DistanceMatrix:
         Returns:
             float: the distance between the positions.
         """
+
+        if self.direct_compute:
+            return np.linalg.norm(self.source_positions[i] - self.source_positions[j])
 
         i, j = min(i, j), max(i, j)
         if i == j: return 0
