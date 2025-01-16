@@ -416,14 +416,15 @@ class Database:
 
     @line_profiler.profile
     def search_pipe(self, template_positions: list[np.ndarray],
-                   seq: str,
-                   site: list[int],
-                   k_mer_similarity_threshold: float,
-                   filter: BaseKMerFilter,
-                   clustering: BaseClustering,
-                   mapper: BaseMapper,
-                   refiner: BaseRefiner,
-                   search_subset: Optional[List[str]] = None) -> List[Result]: # dict[str, Result]:
+                    seq: str,
+                    site: list[int],
+                    k_mer_similarity_threshold: float,
+                    filter: BaseKMerFilter,
+                    clustering: BaseClustering,
+                    mapper: BaseMapper,
+                    refiner: BaseRefiner,
+                    search_subset: Optional[List[str]] = None,
+                    progress: bool = False) -> List[Result]: # dict[str, Result]:
 
         """
         Calculates scores for each structure ID supplied in ids_to_score list. Structures that do not receive any score
@@ -487,7 +488,7 @@ class Database:
 
         results: List[Result] = []
 
-        for cluster in accepted_clusters: # tqdm(accepted_clusters, desc='Evaluating clusters'):
+        for cluster in accepted_clusters if not progress else tqdm(accepted_clusters, desc='Evaluating hits'):
 
             hit = list(cluster.keys())[0]  # seq. index
 
@@ -548,7 +549,8 @@ class Database:
 
 
     def search(self, structure_id: str | None, site: list[int], k_mer_similarity_threshold: float,
-               search_subset: list[str] | None = None, positions: np.typing.NDArray = None, sequence: str = None, lr: float = 0.9) -> List[Result]:
+               search_subset: list[str] | None = None, positions: np.typing.NDArray = None, sequence: str = None,
+               lr: float = 0.9, progress: bool = True) -> List[Result]:
         """
         Searches the database for similar substructures. The query is provided using Biopython's structure and indices
         of aminoacids forming the query substructures. The searched regions can be discontinuous.
@@ -562,6 +564,7 @@ class Database:
         is picked up.
         :param search_subset: If only a subset of the database should be searched, provide the structure IDs of such
         subset.
+        :progress: Whether to display a progress bar.
 
         :return: A list of Results.
         """
@@ -587,7 +590,7 @@ class Database:
         refiner = ICP(rounds=3, cutoff=10)
 
         return self.search_pipe(positions, sequence, site, k_mer_similarity_threshold, filtering, clustering,
-                                mapper, refiner, search_subset=search_subset)
+                                mapper, refiner, search_subset=search_subset, progress=progress)
 
     def get_sequence(self, db_id):
         return self.sequences[db_id]
