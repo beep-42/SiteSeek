@@ -37,10 +37,11 @@ def build(directory, output, threads):
 @click.option('-lr', '--likelihood-ratio', default=0.9, type=click.FloatRange(0, 2), help='The required likelihood ratio')
 @click.option('-kt', '--kmer-threshold', default=11, type=click.FloatRange(0, 20), help='The minimum required kmer similarity')
 @click.option('--no-clustering', is_flag=True, show_default=True, default=False, help='Disables the clustering and relies solely on the RANSAC algorithm.')
+@click.option('--ransac-min', default=15, show_default=True, type=click.IntRange(1, 1500), help='The minimum successful expansions to terminate the RANSAC algorithm.')
 @click.option('-o', '--output', help='Output file for the results', required=False, type=click.File(mode='w'),
               default=stdout)
 # @click.option('--format', help='Output format (JSON or CSV)', required=False)
-def search(database, query, site, likelihood_ratio, kmer_threshold, no_clustering, output):
+def search(database, query, site, likelihood_ratio, kmer_threshold, no_clustering, ransac_min, output):
     """
     Searches the given database and returns JSON output.
 
@@ -64,7 +65,7 @@ def search(database, query, site, likelihood_ratio, kmer_threshold, no_clusterin
     click.echo(click.style('Running the search...', fg='green', bold=True), err=True)
     try:
         t = timer()
-        results = db.search(query, site=site, k_mer_similarity_threshold=kmer_threshold, lr=likelihood_ratio, skip_clustering=no_clustering)
+        results = db.search(query, site=site, k_mer_similarity_threshold=kmer_threshold, lr=likelihood_ratio, skip_clustering=no_clustering, ransac_min=ransac_min)
         click.echo(click.style(f'Done in {timer() - t :.{2}f} seconds. Found {len(results)} results.', fg='cyan', bold=True), err=True)
 
         # output.write(json.dumps(results))
