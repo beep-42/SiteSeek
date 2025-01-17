@@ -3,6 +3,8 @@ import line_profiler
 from FullSiteMapping import FullSiteMapper
 from KmerGen import compute_mapping_similarity_score
 
+def rmsd_to_score(x):
+    return 1 - 1 / (1 + 2.71 ** (-(x/2 - 3)))
 
 @line_profiler.profile
 def score_hit(found_kmer_fraction: float, coverage, mapped_ratio, hit_positions, query_positions, hit_seq,
@@ -22,4 +24,5 @@ def score_hit(found_kmer_fraction: float, coverage, mapped_ratio, hit_positions,
     #    score /= 10
 
     # use the pseudo counted inverse of full_site_rmsd
-    return 1 / (full_site_rmsd+0.01) # * (100 ** found_kmer_fraction - 1)
+    # return 1 / (full_site_rmsd+0.01) # * (100 ** found_kmer_fraction - 1)
+    return rmsd_to_score(full_site_rmsd) * found_kmer_fraction * 100
