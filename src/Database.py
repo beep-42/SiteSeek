@@ -90,7 +90,7 @@ class Result:
 
 class SeqChainDelimitation:
 
-    def __init__(self, chain_ids: list[str], chain_positions: list[int]) -> None:
+    def __init__(self, chain_ids: np.ndarray, chain_positions: np.ndarray) -> None:
         """
         Initializes the SeqChainDelimitation class.
 
@@ -98,8 +98,8 @@ class SeqChainDelimitation:
         :param chain_positions: list of starting positions for each chain.
         """
 
-        self.chain_ids = chain_ids[chain_positions]
-        self.chain_positions = chain_positions
+        self.chain_ids = list(chain_ids[chain_positions])
+        self.chain_positions = list(chain_positions)
 
     def __getitem__(self, index: int) -> str:
         """
@@ -108,7 +108,7 @@ class SeqChainDelimitation:
         :param index: index of the residue in the sequence of the protein.
         """
 
-        chain_idx = bisect_left(self.chain_positions, index)
+        chain_idx = bisect_left(self.chain_positions, index)  - 1
 
         return f'{self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx]}'
 
@@ -131,7 +131,8 @@ class SeqChainDelimitation:
     @staticmethod
     def _validate_and_extract(identifier: str) -> Tuple[str, int]:
         # Define the regex pattern for the format L_I
-        pattern = r'^([A-Za-z]+)_(\d+)$'
+        # To allow only alphabet chain identifiers: r'^([A-Za-z]+)_(\d+)$'
+        pattern = r'^([A-Za-z0-9]+)_(\d+)$' # support numerical identifiers
 
         # Match the input string against the pattern
         match = re.match(pattern, identifier)
