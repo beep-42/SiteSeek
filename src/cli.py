@@ -50,15 +50,15 @@ def search(database, query, site, likelihood_ratio, kmer_threshold, no_clusterin
     :site: Comma-delimited list of residue indices.
     """
 
-    try:
-        site = [int(x) for x in site.split(',')]
-    except Exception as e:
-        click.echo(
-            click.style(f"Invalid site definition! Use a comma separated list of site indices. Example: 1,2,3.",
-                        fg='red', bold=True),
-            err=True
-        )
-        return
+    # try:
+    site = site.split(',') # [int(x) for x in site.split(',')]
+    # except Exception as e:
+    #     click.echo(
+    #         click.style(f"Invalid site definition! Use a comma separated list of site indices. Example: 1,2,3.",
+    #                     fg='red', bold=True),
+    #         err=True
+    #     )
+    #     return
 
     click.echo(click.style('Loading the database...', fg='yellow', bold=False), err=True)
     db: Database = Database.load(database)

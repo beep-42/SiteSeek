@@ -10,11 +10,13 @@ import multiprocessing
 import pickle
 import sys
 import time
-from collections import defaultdict
+from bisect import bisect_left
+from collections import defaultdict, namedtuple
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, List, Literal, Tuple, Dict, Callable
+import re
 
 import line_profiler
 from typing_extensions import Self
@@ -68,7 +70,7 @@ class Result:
         translation(np.ndarray): A translation vector from the superposition of the pockets.
         mapping(dict[int, int]): A dictionary mapping the sequence positions between the query and the hit.
     """
-    def __init__(self, structure_id: str, database_id: int, score: float, rotation: np.ndarray, translation: np.ndarray, mapping: dict[int, int]):
+    def __init__(self, structure_id: str, database_id: int, score: float, rotation: np.ndarray, translation: np.ndarray, mapping: dict[str, str]):
         self.label = None   # TODO: Remove, for debugging purposes
         self.ligand_dist = None     # TODO: Remove, for debugging purposes
         self.structure_id = structure_id
@@ -85,6 +87,64 @@ class Result:
     def get_header():
         return 'ID\tSCORE\tMAPPING\n'
 
+
+class SeqChainDelimitation:
+
+    def __init__(self, chain_ids: list[str], chain_positions: list[int]) -> None:
+        """
+        Initializes the SeqChainDelimitation class.
+
+        :param chain_ids: list of ids of the chains for every residue in the protein.
+        :param chain_positions: list of starting positions for each chain.
+        """
+
+        self.chain_ids = chain_ids[chain_positions]
+        self.chain_positions = chain_positions
+
+    def __getitem__(self, index: int) -> str:
+        """
+        Converts the given index to chain id-pos notation like B_36 (36th residue in the chain B).
+
+        :param index: index of the residue in the sequence of the protein.
+        """
+
+        chain_idx = bisect_left(self.chain_positions, index)
+
+        return f'{self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx]}'
+
+    def chain_pos_identifier_to_index(self, chain_pos_identifier: str) -> int:
+        """
+        Converts the given chain position identifier into sequence index.
+        Example: B_26 -> 136
+
+        :param chain_pos_identifier: chain position identifier in the format CHAINCODE_INDEX.
+        """
+
+        chain_id, position = SeqChainDelimitation._validate_and_extract(chain_pos_identifier)
+        chain_idx = self.chain_ids.index(chain_id)
+
+        try:
+            return self.chain_positions[self.chain_ids.index(chain_id)] + position
+        except ValueError:
+            raise ValueError(f"The identifier {chain_pos_identifier} does not match any residue in the sequence.")
+
+    @staticmethod
+    def _validate_and_extract(identifier: str) -> Tuple[str, int]:
+        # Define the regex pattern for the format L_I
+        pattern = r'^([A-Za-z]+)_(\d+)$'
+
+        # Match the input string against the pattern
+        match = re.match(pattern, identifier)
+
+        if match:
+            # Extract L and I from the matched groups
+            chain_id = match.group(1)  # The letter code
+            position = int(match.group(2))  # The positive integer
+            return chain_id, position
+        else:
+            raise ValueError("Residue identifier is not in the correct format CHAINCODE_INDEX.")
+
+
 class Database:
     """
     Database class for storing and searching similar sites.
@@ -97,14 +157,16 @@ class Database:
         self.ids: List[str] = []
         self.pdb_code_to_index: Dict[str, int] = {}
         self.sequences: List[str] = []
+        self.delimitations: List[SeqChainDelimitation] = []
         self.pos_vectors: List[np.ndarray] = []
         self.kdtrees = []
 
-    def add(self, name: str, sequence: str, ca_positions: np.ndarray, kmers: List[str] | None = None) -> None:
+    def add(self, name: str, sequence: str, delimitations: SeqChainDelimitation, ca_positions: np.ndarray, kmers: List[str] | None = None) -> None:
         """
         Add the given entry to the database.
         :param name: ID of the structures
         :param sequence: Sequence of the structure
+        :param delimitations: SeqChainDelimitation associated with the protein
         :param ca_positions: Numpy array of 3D  coordinates of the C-alpha atoms of the structure
         :param kmers: List of Kmers generated from the given sequence. Kmers will be generated if None.
         """
@@ -115,6 +177,7 @@ class Database:
         index = len(self.sequences)
         self.ids.append(name)
         self.sequences.append(sequence)
+        self.delimitations.append(delimitations)
 
         if kmers is None:
             kmers = generate_kmers(sequence)
@@ -132,7 +195,8 @@ class Database:
         # self.kdtrees.append(tree)
 
     @staticmethod
-    def _process_atom_array(atoms: biotite.structure.AtomArray, sequence: str | None = None) -> Tuple[str, np.ndarray]:
+    def _process_atom_array(atoms: biotite.structure.AtomArray, sequence: str | None = None)\
+            -> Tuple[str, SeqChainDelimitation, np.ndarray]:
         """
         Processes the Biotite's AtomArray and convert it to Ca coordinates np.array and get the sequence.
         Ignores the hetero atoms.
@@ -145,7 +209,9 @@ class Database:
         filtered_atoms = atoms[(atoms.atom_name == 'CA') & (atoms.hetero == False)]
 
         if sequence is None:
-            seqs = structure.to_sequence(filtered_atoms, allow_hetero=False)[0]  # hetero atoms should NOT be present
+            seqs, chain_pos = structure.to_sequence(filtered_atoms, allow_hetero=False)  # hetero atoms should NOT be present
+            delimitations = SeqChainDelimitation(filtered_atoms.chain_id, chain_pos)
+
             sequence = ''.join([str(x) for x in seqs])
             # sequence = sequence.replace('X', '')
 
@@ -155,6 +221,10 @@ class Database:
             #     if i not in het:
             #         sequence += seq[i]
 
+        else:
+            chain_indices = list(sorted([filtered_atoms.chain_id.index(x) for x in set(filtered_atoms.chain_id)]))
+            delimitations = SeqChainDelimitation(filtered_atoms.chain_id, chain_indices)
+
         # ignore hetero atoms
         ca = structure.coord(filtered_atoms)  # & structure.filter_canonical_amino_acids(array)])
 
@@ -162,7 +232,7 @@ class Database:
         if len(sequence) != len(ca):
             raise Exception("The length of the sequence and the number of Ca atoms do not match!")
 
-        return sequence, ca
+        return sequence, delimitations, ca
 
     @staticmethod
     def _load_atom_array(file_path: str):
@@ -208,8 +278,8 @@ class Database:
         while not id_args_queue.empty():
             pdb_id, arg = id_args_queue.get_nowait()
             try:
-                seq, struct = Database._process_atom_array(get_function(arg))
-                out.append((pdb_id, seq, struct, generate_kmers(seq)))
+                seq, delimitation, struct  = Database._process_atom_array(get_function(arg))
+                out.append((pdb_id, seq, delimitation, struct, generate_kmers(seq)))
             except Exception as e:
                 print(f"Failed to add {pdb_id}, skipping. Reason: {e}", file=sys.stderr)
 
@@ -263,7 +333,7 @@ class Database:
                     ubar = tqdm(desc='Unifying results', total=current_total)
                     for future in concurrent.futures.as_completed(future_to_queue):
                         for one_struct in future.result():
-                            self.add(one_struct[0], one_struct[1], one_struct[2], one_struct[3])
+                            self.add(*one_struct) # one_struct[0], one_struct[1], one_struct[2], one_struct[3])
                             ubar.update(1)
 
                     ubar.close()
@@ -286,11 +356,11 @@ class Database:
         :return: None
         """
 
-        sequence, ca_positions = Database._process_atom_array(Database._load_atom_array(file_path))
+        sequence, delimitation, ca_positions = Database._process_atom_array(Database._load_atom_array(file_path))
 
         if database_identifier is None: database_identifier = Path(file_path).stem
 
-        self.add(database_identifier, sequence, ca_positions)
+        self.add(database_identifier, sequence, delimitation, ca_positions)
 
 
     def fetch_structures(self, pdb_ids: List[str], n_jobs : int = -1, memory_split: int = 10000) -> None:
@@ -420,9 +490,20 @@ class Database:
                     prepared[one].add(i+1)
         return prepared
 
+    def _convert_mapping(self, hit_id: int, query_delimitations: SeqChainDelimitation, mapping: Dict[int, int]) -> Dict[str, str]:
+
+        resulting_mapping = {}
+        for key in mapping:
+
+            resulting_mapping[query_delimitations[key]] = self.delimitations[hit_id][mapping[key]]
+
+        return resulting_mapping
+
+
     @line_profiler.profile
     def search_pipe(self, template_positions: list[np.ndarray],
                     seq: str,
+                    delimitations: SeqChainDelimitation,
                     site: list[int],
                     k_mer_similarity_threshold: float,
                     filter: BaseKMerFilter,
@@ -438,6 +519,7 @@ class Database:
 
         :param template_positions: List of vectors of positions of residues in the query structures
         :param seq: The sequence of the query structure
+        :param delimitations: The delimitations of the chains in the query structure
         :param site: List of indices of the residues participating in the ligand binding (indices of pocket residues)
         :param k_mer_min_found_fraction: Minimal allowed fraction of all similar Kmers found in the target sequence,
         compared to the total count of searched Kmers originating from the query cavity (all Kmers around residues
@@ -541,7 +623,7 @@ class Database:
                               rot, trans)
 
             results.append(
-                Result(self.ids[hit], hit, score, rot, trans, mapping)
+                Result(self.ids[hit], hit, score, rot, trans, self._convert_mapping(hit, delimitations, mapping))
             )
 
             # if self.ids[hit] not in results or results[self.ids[hit]].score < score:    # accumulate the hit with the highest score for each structure
@@ -554,8 +636,9 @@ class Database:
         return results
 
 
-    def search(self, structure_id: str | None, site: list[int], k_mer_similarity_threshold: float,
+    def search(self, structure_id: str | None, site: list[str], k_mer_similarity_threshold: float,
                search_subset: list[str] | None = None, positions: np.typing.NDArray = None, sequence: str = None,
+               delimitations: SeqChainDelimitation | None = None,
                lr: float = 0.9, skip_clustering: bool = False, ransac_min: int = 15, progress: bool = True) -> List[Result]:
         """
         Searches the database for similar substructures. The query is provided using Biopython's structure and indices
@@ -580,6 +663,11 @@ class Database:
 
         positions = self.pos_vectors[self.pdb_code_to_index[structure_id]] if structure_id is not None else positions
         sequence = self.sequences[self.pdb_code_to_index[structure_id]] if structure_id is not None else sequence
+        delimitations = self.delimitations[self.pdb_code_to_index[structure_id]] if structure_id is not None else delimitations
+
+        converted_site = []
+        for chain_res_id in site:
+            converted_site.append(delimitations.chain_pos_identifier_to_index(chain_res_id))
 
         # filtering = HardKMerFilter(k_mer_min_found_fraction=.5)
         filtering =  SoftKMerFilter(overall_required_similarity=lr)
@@ -595,7 +683,7 @@ class Database:
                                        polygon=3)
         refiner = ICP(rounds=3, cutoff=10)
 
-        return self.search_pipe(positions, sequence, site, k_mer_similarity_threshold, filtering, clustering,
+        return self.search_pipe(positions, sequence, delimitations, converted_site, k_mer_similarity_threshold, filtering, clustering,
                                 mapper, refiner, search_subset=search_subset, progress=progress)
 
     def get_sequence(self, db_id):
