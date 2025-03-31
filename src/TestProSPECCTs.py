@@ -2,13 +2,15 @@
 from collections import defaultdict
 
 import csv
+from zipimport import path_sep
+
 import Helpers
 from Database import Database, Result
 from tqdm import tqdm
 from Bio.PDB.MMCIF2Dict import MMCIF2Dict
 import os
 from matplotlib import pyplot as plt
-from sklearn.metrics import RocCurveDisplay
+from sklearn.metrics import RocCurveDisplay, roc_auc_score
 import random
 from timeit import default_timer as timer
 from Helpers import *
@@ -39,9 +41,10 @@ def load_db(name):
     return db
 
 
-def get_struct(dataset, id):
+def get_struct(dataset, id, dsub_folder = None,):
     p = PDB.PDBParser(QUIET=True)
-    return p.get_structure(id, f'{DATASET_PATH}/{dataset}/{dataset}/{id}.pdb')
+    if dsub_folder is None: dsub_folder = dataset
+    return p.get_structure(id, f'{DATASET_PATH}/{dataset}/{dsub_folder}/{id}.pdb')
 
 
 def load_similarity_dicts(name):
@@ -134,14 +137,15 @@ def get_transposed_and_query_ligand_distance(db_name, pdb_code_hit, rot, trans, 
     return np.linalg.norm((hit_ligand @ rot + trans) - query_ligand)
 
 
-def process_and_test_prospeccts(dataset):
+def process_and_test_prospeccts(dataset, dsub_folder = None, only_return = False):
 
     cutoff = 4  # distance cutoff for residues to be considered part of the pocket, angstroms
+    if dsub_folder is None: dsub_folder = dataset
 
     # db: Database = load_db(dataset)
 
     db: Database = Database()
-    db.add_from_directory(f'{DATASET_PATH}/{dataset}/{dataset}/')
+    db.add_from_directory(f'{DATASET_PATH}/{dataset}/{dsub_folder}/')
     # db.save(f'db-{dataset}.lzma')
 
     # db = Database.load(f'db-{dataset}.lzma')
@@ -166,23 +170,27 @@ def process_and_test_prospeccts(dataset):
     # refiner = None #ICP(rounds=0,
     #                 #cutoff=10,)
 
-    for struct_id in tqdm(all_ids[:30], desc='running all comparisons'):
+    for struct_id in tqdm(all_ids[:], desc='running all comparisons'): # if not only_return else all_ids[:]:
 
         # print(f"Processing {struct_id}")
         db_id = db.pdb_code_to_index[struct_id]
-        struct = get_struct(dataset, struct_id)
+        struct = get_struct(dataset, struct_id, dsub_folder)
         # site = Helpers.get_ligand_contacts_with_cashing(dataset, struct_id, struct, cutoff)
         site = Helpers.get_ligand_contacts_np(struct, cutoff)
         for resi in site.copy():
             if resi >= len(db.sequences[db_id]): site.remove(resi)
         if len(site) == 0: continue  # why is this happening?
 
+        # convert site to chain_res notation
+        converted_site: list[str] = []
+        for pos in site:
+            converted_site.append(db.delimitations[db_id][pos])
+
         check_only = active[struct_id] + inactive[struct_id]
         start = timer()
-        results = db.search(struct_id, site, k_mer_similarity_threshold=14, search_subset=check_only, lr=.25)
+        results = db.search(struct_id, converted_site, k_mer_similarity_threshold=14, search_subset=check_only, lr=.25, skip_clustering=True, ransac_min=15, progress=False)
         end = timer()
         elapsed += end - start
-
 
         best_results_per_structure = {}
         for result in results:
@@ -205,14 +213,16 @@ def process_and_test_prospeccts(dataset):
 
             best_results_per_structure[result_id].label = 'positive' if result_id in active[struct_id] else 'negative'
 
-            # Add the distance of the superposed ligands
-            if best_results_per_structure[result_id].rotation is not None:
-                best_results_per_structure[result_id].ligand_dist = get_transposed_and_query_ligand_distance(dataset, result_id,
-                                                                                             best_results_per_structure[result_id].rotation,
-                                                                                             best_results_per_structure[result_id].translation,
-                                                                                             struct_id)
-
-                if best_results_per_structure[result_id].ligand_dist > 5: scores[-1] = -1    # mark as FP
+            # this only calculates and filters POSITIVE hits (based on the ligand distance)
+            if True or result_id in active[struct_id]:
+                # Add the distance of the superposed ligands
+                if best_results_per_structure[result_id].rotation is not None:
+                    best_results_per_structure[result_id].ligand_dist = get_transposed_and_query_ligand_distance(dataset, result_id,
+                                                                                                 best_results_per_structure[result_id].rotation,
+                                                                                                 best_results_per_structure[result_id].translation,
+                                                                                                 struct_id)
+                    # print(f"Ligand distance: {best_results_per_structure[result_id].ligand_dist}")
+                    if best_results_per_structure[result_id].ligand_dist > 5: scores[-1] = -1    # mark as FP
 
             results_log.append(best_results_per_structure[result_id])
 
@@ -229,14 +239,62 @@ def process_and_test_prospeccts(dataset):
                 expected.append(id in active[struct_id])
                 scores.append(-1)
 
-    RocCurveDisplay.from_predictions(expected, scores)
+    if not only_return:
 
-    plt.show()
+        RocCurveDisplay.from_predictions(expected, scores)
 
-    print(f"Total elapsed time during searching: {elapsed}, total compared: {len(results_log)}, time per comparison: {elapsed/len(results_log)*1000} ms.")
+        plt.show()
 
-    with open(f'{RESULTS_DIR}{dataset}.pickle', 'wb') as f:
-        pickle.dump(results_log, f)
+        print(f"Total elapsed time during searching: {elapsed}, total compared: {len(results_log)}, time per comparison: {elapsed/len(results_log)*1000} ms.")
+
+        with open(f'{RESULTS_DIR}{dataset}.pickle', 'wb') as f:
+            pickle.dump(results_log, f)
+
+    else:
+
+        # return AUC, time per comp.
+        return roc_auc_score(expected, scores), elapsed / len(results_log) * 1000
+
+
+def attest_all() -> float:
+
+    datasets = [
+        ('identical_structures', 0.99),
+        ('identical_structures_similar_ligands', 1.00),
+        ('NMR_structures', 1.00),
+        ('decoy_structures', 'decoy_rational_structures', 0.85),
+        ('decoy_structures', 'decoy_shape_structures', 0.84),
+        ('kahraman_structures', 0.54),
+        ('barelier_structures', 0.5),
+        ('review_structures', 0.74)
+    ]
+
+    # total_dots = 10 # how many dots to log during computation
+    passed = 0
+
+    print("Running ProSPECCTs based testing...\n")
+
+    for current in datasets:
+
+        if not isinstance(current, tuple): raise Exception("Give me tuple man.")
+
+        if len(current) == 3:
+            dset, subdir, required = current
+        else:
+            dset, required = current
+            subdir = dset
+
+        print(dset + "...\t") #, end='')
+        auc, time = process_and_test_prospeccts(dset, dsub_folder=subdir, only_return=True)
+        print(dset + '\t' + str(auc) + "\t" + str(round(time, 2)) + 'ms/comp\t' + ('PASS' if auc >= required else 'FAIL'))
+
+        if auc >= required:
+            passed += 1
+
+    print(f"\nDONE! Passed: {passed}/{len(datasets)}.")
+    if passed != len(datasets): print("Warning: Some datasets failed!")
+
+    return passed / len(datasets)
 
 def write_superimposed(dataset_name, id1, id2, mapping, rot, trans, prefix=''):
     """Superimposes the first one on the second one and saves them to the
@@ -280,5 +338,7 @@ def write_superimposed(dataset_name, id1, id2, mapping, rot, trans, prefix=''):
 
 if __name__ == '__main__':
 
-    dataset = 'review' + '_structures'  # or any other dataset from the ProSPECCTs benchmark
-    process_and_test_prospeccts(dataset)
+    attest_all()
+
+    # dataset = 'kahraman' + '_structures'  # or any other dataset from the ProSPECCTs benchmark
+    # process_and_test_prospeccts(dataset) #, dsub_folder='decoy_shape_structures')
