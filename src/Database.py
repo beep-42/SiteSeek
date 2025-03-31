@@ -108,7 +108,7 @@ class SeqChainDelimitation:
         :param index: index of the residue in the sequence of the protein.
         """
 
-        chain_idx = bisect_left(self.chain_positions, index)  - 1
+        chain_idx = bisect_left(self.chain_positions, index) - 1
 
         return f'{self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx]}'
 
@@ -160,7 +160,7 @@ class Database:
         self.sequences: List[str] = []
         self.delimitations: List[SeqChainDelimitation] = []
         self.pos_vectors: List[np.ndarray] = []
-        self.kdtrees = []
+        # self.kdtrees = []
 
     def add(self, name: str, sequence: str, delimitations: SeqChainDelimitation, ca_positions: np.ndarray, kmers: List[str] | None = None) -> None:
         """
@@ -697,19 +697,46 @@ class Database:
 
         return len(self.ids)
 
-    def save(self, file_path: str):
+    def save(self, file_path: str, compress: bool = True) -> None:
         """
         Saves the database into a file.
 
         :param file_path: The path to the file.
+        :param compress: Whether to compress the file.
         """
 
-        with lzma.open(file_path, "wb") as file:
-            pickle.dump(self, file)
+        if compress:
+            with lzma.open(file_path, "wb") as file:
+                pickle.dump(self, file)
+        else:
+            with open(file_path, "wb") as file:
+                pickle.dump(self, file)
 
     @staticmethod
-    def load(file_path: str) -> Self:
-        with lzma.open(file_path, "rb") as file:
-            db: Database = pickle.load(file)
+    def load(file_path: str, compressed: bool = True) -> Self:
+        """
+        Loads the database from a file and lods it's datafields.
 
-        return db
+        :param file_path: The path to the file.
+        :param compressed: Whether the database file is compressed.
+        """
+
+        if compressed:
+            with lzma.open(file_path, "rb") as file:
+                db: Database = pickle.load(file)
+        else:
+            with open(file_path, "rb") as file:
+                db: Database = pickle.load(file)
+
+        # TODO: Fix this sketchy implementation
+        # Just load the db data fields
+        new_db = Database()
+        new_db.position_dtype = db.position_dtype
+        new_db.kmer_db = db.kmer_db
+        new_db.ids = db.ids
+        new_db.pdb_code_to_index = db.pdb_code_to_index
+        new_db.sequences = db.sequences
+        new_db.delimitations = db.delimitations
+        new_db.pos_vectors = db.pos_vectors
+
+        return new_db

@@ -13,7 +13,8 @@ def cli():
 @click.argument('output', default='database.lzma',
                 type=click.Path(exists=False, file_okay=True, dir_okay=False, writable=True), required=False)
 @click.option('-t', '--threads', default=-1, help='Number of threads to use (default cpu_count)')
-def build(directory, output, threads):
+@click.option('--compress', default=False, is_flag=True, help='Compress the database file')
+def build(directory, output, threads, compress):
     """
     Builds the database from all files in the given directory.
 
@@ -25,7 +26,7 @@ def build(directory, output, threads):
     try:
         db.add_from_directory(directory, n_jobs=threads)
         click.echo(click.style('Done!', fg='green', bold=True))
-        db.save(output)
+        db.save(output, compress=compress)
         click.echo(click.style(f'Saved to {output}', fg='yellow', bold=False))
     except Exception as e:
         click.echo(click.style(f"Failed! Exception: {e}", fg='red', bold=True))
@@ -40,8 +41,9 @@ def build(directory, output, threads):
 @click.option('--ransac-min', default=15, show_default=True, type=click.IntRange(1, 1500), help='The minimum successful expansions to terminate the RANSAC algorithm.')
 @click.option('-o', '--output', help='Output file for the results', required=False, type=click.File(mode='w'),
               default=stdout)
+@click.option('--compressed', default=False, is_flag=True, help='Uncompress the database file.')
 # @click.option('--format', help='Output format (JSON or CSV)', required=False)
-def search(database, query, site, likelihood_ratio, kmer_threshold, no_clustering, ransac_min, output):
+def search(database, query, site, likelihood_ratio, kmer_threshold, no_clustering, ransac_min, output, compressed):
     """
     Searches the given database and returns JSON output.
 
@@ -61,7 +63,7 @@ def search(database, query, site, likelihood_ratio, kmer_threshold, no_clusterin
     #     return
 
     click.echo(click.style('Loading the database...', fg='yellow', bold=False), err=True)
-    db: Database = Database.load(database)
+    db: Database = Database.load(database, compressed=compressed)
     click.echo(click.style('Running the search...', fg='green', bold=True), err=True)
     try:
         t = timer()
