@@ -70,22 +70,24 @@ class Result:
         translation(np.ndarray): A translation vector from the superposition of the pockets.
         mapping(dict[int, int]): A dictionary mapping the sequence positions between the query and the hit.
     """
-    def __init__(self, structure_id: str, database_id: int, score: float, rotation: np.ndarray, translation: np.ndarray, mapping: dict[str, str]):
+    def __init__(self, structure_id: str, database_id: int, score: float, rmsd, rotation: np.ndarray, translation: np.ndarray, mapping: dict[str, str]):
         self.label = None   # TODO: Remove, for debugging purposes
         self.ligand_dist = None     # TODO: Remove, for debugging purposes
         self.structure_id = structure_id
         self.database_id = database_id
         self.score = score
+        self.rmsd = rmsd
         self.rotation = rotation
         self.translation = translation
         self.mapping = mapping
 
     def __str__(self):
-        return f'{self.structure_id}\t{self.score:.{2}f}\t{str(self.mapping)}\n'
+        return f'{self.structure_id}\t{self.score:.{2}f}\t{self.rmsd:.{2}f}\t{str(self.mapping)}\t{self.rotation}\t{self.translation}\n'
+
 
     @staticmethod
     def get_header():
-        return 'ID\tSCORE\tMAPPING\n'
+        return 'ID\tSCORE\tRMSD\tMAPPING\tROT\tTRANS\n'
 
 
 class SeqChainDelimitation:
@@ -100,6 +102,24 @@ class SeqChainDelimitation:
 
         self.chain_ids = list(chain_ids[chain_positions])
         self.chain_positions = list(chain_positions)
+        # self.primitive_conversion_array = chain_ids
+    #
+    # def primitive_index_to_id(self, index):
+    #
+    #     chain = self.primitive_conversion_array[index]
+    #     chain_position = np.sum(self.primitive_conversion_array[:index+1] == chain)
+    #     return f'{chain}_{chain_position}'
+    #
+    # def primitive_id_to_index(self, id):
+    #
+    #     chain, pos = SeqChainDelimitation._validate_and_extract(id)
+    #     index = 0
+    #     while self.primitive_conversion_array[index] != chain:
+    #         index += 1
+    #     index += pos
+    #     assert self.primitive_conversion_array[index] == chain
+    #
+    #     return index
 
     def __getitem__(self, index: int) -> str:
         """
@@ -108,9 +128,14 @@ class SeqChainDelimitation:
         :param index: index of the residue in the sequence of the protein.
         """
 
-        chain_idx = bisect_left(self.chain_positions, index) - 1
+        chain_idx = len(self.chain_positions) - 1
+        while self.chain_positions[chain_idx] >= index and chain_idx > 0:
+            chain_idx -= 1
 
-        return f'{self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx]}'
+        # print(f"Primitive output: {self.primitive_index_to_id(index)}, Complex: {self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx] + 1}")
+        # assert f'{self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx] + 1}' == self.primitive_index_to_id(index), "Mismatch in encoding"
+
+        return f'{self.chain_ids[chain_idx]}_{index - self.chain_positions[chain_idx] + 1}'
 
     def chain_pos_identifier_to_index(self, chain_pos_identifier: str) -> int:
         """
@@ -124,6 +149,8 @@ class SeqChainDelimitation:
         chain_idx = self.chain_ids.index(chain_id)
 
         try:
+            # rtx = self.chain_positions[self.chain_ids.index(chain_id)] + position
+            # assert rtx == self.primitive_id_to_index(chain_pos_identifier), "Mismatch in decoding"
             return self.chain_positions[self.chain_ids.index(chain_id)] + position
         except ValueError:
             raise ValueError(f"The identifier {chain_pos_identifier} does not match any residue in the sequence.")
@@ -624,7 +651,7 @@ class Database:
                               rot, trans)
 
             results.append(
-                Result(self.ids[hit], hit, score, rot, trans, self._convert_mapping(hit, delimitations, mapping))
+                Result(self.ids[hit], hit, score, rmsd, rot, trans, self._convert_mapping(hit, delimitations, mapping))
             )
 
             # if self.ids[hit] not in results or results[self.ids[hit]].score < score:    # accumulate the hit with the highest score for each structure
@@ -640,7 +667,8 @@ class Database:
     def search(self, structure_id: str | None, site: list[str], k_mer_similarity_threshold: float,
                search_subset: list[str] | None = None, positions: np.typing.NDArray = None, sequence: str = None,
                delimitations: SeqChainDelimitation | None = None,
-               lr: float = 0.9, skip_clustering: bool = False, ransac_min: int = 15, progress: bool = True) -> List[Result]:
+               lr: float = 0.9, skip_clustering: bool = False, skip_icp: bool = False,
+               ransac_min: int = 15, progress: bool = True) -> List[Result]:
         """
         Searches the database for similar substructures. The query is provided using Biopython's structure and indices
         of aminoacids forming the query substructures. The searched regions can be discontinuous.
@@ -682,7 +710,7 @@ class Database:
                                        rounds=1500,
                                        stop_at=ransac_min,
                                        polygon=3)
-        refiner = ICP(rounds=3, cutoff=10)
+        refiner = ICP(rounds=3, cutoff=10) if not skip_icp else None
 
         return self.search_pipe(positions, sequence, delimitations, converted_site, k_mer_similarity_threshold, filtering, clustering,
                                 mapper, refiner, search_subset=search_subset, progress=progress)
