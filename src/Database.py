@@ -304,12 +304,15 @@ class Database:
         out: List[(str, str, np.ndarray, List[str])] = []
 
         while not id_args_queue.empty():
-            pdb_id, arg = id_args_queue.get_nowait()
             try:
-                seq, delimitation, struct  = Database._process_atom_array(get_function(arg))
-                out.append((pdb_id, seq, delimitation, struct, generate_kmers(seq)))
-            except Exception as e:
-                print(f"Failed to add {pdb_id}, skipping. Reason: {e}", file=sys.stderr)
+                pdb_id, arg = id_args_queue.get_nowait()
+                try:
+                    seq, delimitation, struct  = Database._process_atom_array(get_function(arg))
+                    out.append((pdb_id, seq, delimitation, struct, generate_kmers(seq)))
+                except Exception as e:
+                    print(f"Failed to add {pdb_id}, skipping. Reason: {e}", file=sys.stderr)
+            except Exception as e: # queue empty
+                pass
 
         return out
 
