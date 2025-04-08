@@ -151,7 +151,7 @@ class SeqChainDelimitation:
         try:
             # rtx = self.chain_positions[self.chain_ids.index(chain_id)] + position
             # assert rtx == self.primitive_id_to_index(chain_pos_identifier), "Mismatch in decoding"
-            return self.chain_positions[self.chain_ids.index(chain_id)] + position
+            return self.chain_positions[self.chain_ids.index(chain_id)] + position - 1
         except ValueError:
             raise ValueError(f"The identifier {chain_pos_identifier} does not match any residue in the sequence.")
 
