@@ -233,7 +233,7 @@ def process_and_test_prospeccts(dataset, dsub_folder = None, only_return = False
 
         for id in check_only:
             if id not in best_results_per_structure:
-                res = Result(id, -1, -1, None, None, None)
+                res = Result(id, -1, -1, None, None, None, None)
                 res.label = 'positive' if id in active[struct_id] else 'negative'
                 results_log.append(res)
                 expected.append(id in active[struct_id])

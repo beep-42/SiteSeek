@@ -68,9 +68,10 @@ class Result:
         score(float): the score of the found binding site
         rotation(np.ndarray): A right multiplying rotation matrix from the superposition of the pockets.
         translation(np.ndarray): A translation vector from the superposition of the pockets.
-        mapping(dict[int, int]): A dictionary mapping the sequence positions between the query and the hit.
+        mapping(dict[str, str]): A dictionary mapping the sequence positions between the query and the hit.
+        int_mapping(dict[int, int]): int form of mapping.
     """
-    def __init__(self, structure_id: str, database_id: int, score: float, rmsd, rotation: np.ndarray, translation: np.ndarray, mapping: dict[str, str]):
+    def __init__(self, structure_id: str, database_id: int, score: float, rmsd, rotation: np.ndarray, translation: np.ndarray, mapping: dict[str, str], int_mapping: dict[int, int]):
         self.label = None   # TODO: Remove, for debugging purposes
         self.ligand_dist = None     # TODO: Remove, for debugging purposes
         self.structure_id = structure_id
@@ -80,14 +81,15 @@ class Result:
         self.rotation = rotation
         self.translation = translation
         self.mapping = mapping
+        self.int_mapping = {int(x): int(int_mapping[x]) for x in int_mapping}
 
     def __str__(self):
-        return f'{self.structure_id}\t{self.score:.{2}f}\t{self.rmsd:.{2}f}\t{str(self.mapping)}\t{self.rotation}\t{self.translation}\n'
+        return f'{self.structure_id}\t{self.score:.{2}f}\t{self.rmsd:.{2}f}\t{str(self.mapping)}\t{self.int_mapping}\t{self.rotation}\t{self.translation}\n'
 
 
     @staticmethod
     def get_header():
-        return 'ID\tSCORE\tRMSD\tMAPPING\tROT\tTRANS\n'
+        return 'ID\tSCORE\tRMSD\tMAPPING\tINT_MAP\tROT\tTRANS\n'
 
 
 class SeqChainDelimitation:
@@ -450,7 +452,6 @@ class Database:
                                 seq1: str, seq2: str,
                                 k_mer_similarity_threshold: int,
                                 kmers: list[str],
-                                add_all_points=True) -> defaultdict[int, list[int]]:
                                 add_all_points=True,
                                 restrict_seq2:list[int] | None = None) -> defaultdict[int, list[int]]:
 
@@ -601,7 +602,7 @@ class Database:
         # PART 1: K-mer filtering
         subset: Optional[List[int]] = [self.pdb_code_to_index[x] for x in search_subset] if search_subset is not None else None
         all_seq, kmer_found = filter.search_kmers(self, kmer_tuple, kmers_dict, rated_kmers_dict=scored_kmer_dict, use_subset=subset)
-        print(f"Total identifier by kmer pref-filter: {len(all_seq)}")
+        # print(f"Total identifier by kmer pref-filter: {len(all_seq)}")
 
         # PART 2: CLUSTERING
         clustering.set_template(template_positions, site)
@@ -673,7 +674,7 @@ class Database:
                               rot, trans)
 
             results.append(
-                Result(self.ids[hit], hit, score, rmsd, rot, trans, self._convert_mapping(hit, delimitations, mapping))
+                Result(self.ids[hit], hit, score, rmsd, rot, trans, self._convert_mapping(hit, delimitations, mapping), mapping)
             )
 
             # if self.ids[hit] not in results or results[self.ids[hit]].score < score:    # accumulate the hit with the highest score for each structure
