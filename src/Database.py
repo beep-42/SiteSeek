@@ -451,6 +451,8 @@ class Database:
                                 k_mer_similarity_threshold: int,
                                 kmers: list[str],
                                 add_all_points=True) -> defaultdict[int, list[int]]:
+                                add_all_points=True,
+                                restrict_seq2:list[int] | None = None) -> defaultdict[int, list[int]]:
 
         """
         Generates non-redundant dictionary, that maps every position from positions on the first sequence, to positions
@@ -461,17 +463,25 @@ class Database:
         :param k_mer_similarity_threshold: Minimal required similarity
         :param kmers: All kmers generated from the second sequence
         :param add_all_points: Whether to match only center points, or all points from the kmer (this trimer
+        :param restrict_seq2: Whether to restrict the matches on the second sequence only to the given list
         implementation matches all three)
 
         :return: Mapping of the points.
         """
 
         potential_matches = defaultdict(list)
+
+
         for res_pos in positions:
 
             kmer = get_one_trimer_slice(seq1, res_pos)  # kmer around the position
 
-            for ref_pos, ref_kmer in enumerate(kmers):
+            if restrict_seq2 is None:
+                kmer_walk = enumerate(kmers)
+            else: # restrict to the given indicies only
+                kmer_walk = zip(restrict_seq2, [kmers[x] for x in restrict_seq2])
+
+            for ref_pos, ref_kmer in kmer_walk: # enumerate(kmers):
                 if score_seq_similarity(kmer, ref_kmer) >= k_mer_similarity_threshold:
 
                     if add_all_points:
@@ -611,10 +621,19 @@ class Database:
 
             hit = list(cluster.keys())[0]  # seq. index
 
+            # TODO: The positions are used from the clustering instead of using position from the binding site! -> sometimes leads to better results
             positions = cluster[hit]
 
-            potential_matches = Database._find_potential_matches(positions, self.sequences[hit], seq, k_mer_similarity_threshold,
-                                                                 kmers, add_all_points=True)
+            # Finds matches in the found cluster in the hit matching ANYTHING in the query sequence.
+            # potential_matches = Database._find_potential_matches(positions, self.sequences[hit], seq, k_mer_similarity_threshold,
+            #                                                     kmers, add_all_points=False)
+
+            # Strict version: Finds only matches between the cluster and the binding site
+            potential_matches = Database._find_potential_matches(positions, self.sequences[hit], seq,
+                                                                 k_mer_similarity_threshold,
+                                                                 kmers, add_all_points=False,
+                                                                 restrict_seq2=site)
+
 
             # print(Database._find_potential_matches(positions, self.seqs[hit], seq, k_mer_similarity_threshold,
             #                                                      kmers, add_all_points=False))
