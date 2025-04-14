@@ -90,7 +90,7 @@ def search(database, query, site, likelihood_ratio, kmer_threshold, no_clusterin
 
         # output.write(json.dumps(results))
         if output_json:
-            output.write(convert_to_json(results))
+            output.write(convert_to_json(sorted(results, key=lambda x: x.score, reverse=True)))
         else:
             output.write(Result.get_header())
             output.write(''.join([str(x) for x in sorted(results, key=lambda x: x.score, reverse=True)]))
