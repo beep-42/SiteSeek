@@ -618,7 +618,12 @@ class Database:
 
         results: List[Result] = []
 
+        total_evaluated = 0
+        one_percent = max(int(len(accepted_clusters) / 100), 1)
         for cluster in accepted_clusters if not progress else tqdm(accepted_clusters, desc='Evaluating hits'):
+            total_evaluated += 1
+            if total_evaluated % one_percent == 0:
+                yield f'{total_evaluated / len(accepted_clusters) * 100}\n'
 
             hit = list(cluster.keys())[0]  # seq. index
 

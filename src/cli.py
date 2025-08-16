@@ -6,6 +6,8 @@ import json
 from sys import stdout
 from timeit import default_timer as timer
 
+from web_interface import app
+
 
 def convert_to_json(results: list[Result]) -> str:
     """Converts list of Results to a dict of dicts (index to object) and subsequently serializes it using json.dumps."""
@@ -97,6 +99,29 @@ def search(database, query, site, likelihood_ratio, kmer_threshold, no_clusterin
 
     except Exception as e:
         click.echo(click.style(f"Failed! Exception: {e}", fg='red', bold=True))
+
+@cli.command(short_help='Starts a webserver with a given database (development only)')
+@click.argument('database', type=click.Path(exists=True, dir_okay=False, readable=True))
+@click.option('--compressed', default=False, is_flag=True, help='Uncompress the database file.')
+@click.option('-h', '--host', type=click.STRING, default='localhost')
+@click.option('-p', '--port', type=click.INT, default=5000)
+@click.option('-d', '--debug', type=click.BOOL, default=True)
+def serve(database, compressed, host, port, debug):
+    """
+    Starts a webserver with a given database (development only).
+
+    :database: Path to the database file.
+    :host: ip to host on. Default: localhost.
+    :port: port for the webserver. Default: 5000.
+    :debug: whether to run in debug mode, default is True.
+    """
+
+    click.echo(click.style('Loading the database...', fg='yellow', bold=False), err=True)
+    app.app.config['database']: Database = Database.load(database, compressed=compressed)
+    click.echo(click.style('Serving the app...', fg='green', bold=True), err=True)
+    app.app.config['database_name'] = database
+
+    app.app.run(host=host, port=port, debug=debug)
 
 if __name__ == '__main__':
     cli()
