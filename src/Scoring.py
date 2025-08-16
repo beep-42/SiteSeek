@@ -25,4 +25,5 @@ def score_hit(found_kmer_fraction: float, coverage, mapped_ratio, hit_positions,
 
     # use the pseudo counted inverse of full_site_rmsd
     # return 1 / (full_site_rmsd+0.01) # * (100 ** found_kmer_fraction - 1)
-    return rmsd_to_score(full_site_rmsd) * found_kmer_fraction * 100
+    # return rmsd_to_score(full_site_rmsd) * found_kmer_fraction * 100
+    return rmsd_to_score(full_site_rmsd)
