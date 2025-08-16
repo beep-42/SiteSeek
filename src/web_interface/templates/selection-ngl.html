@@ -202,7 +202,7 @@
 
         updateSelectionDisplay();
 
-        currentlyLoadedPdbId = document.getElementById("pdbId").value.trim().toUpperCase();
+        currentlyLoadedPdbId = document.getElementById("pdbId").value.trim(); // .toUpperCase();
         if (!currentlyLoadedPdbId) return;
 
         showToast('Loading ' + currentlyLoadedPdbId, 'secondary');
