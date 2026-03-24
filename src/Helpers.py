@@ -1,4 +1,9 @@
+import hashlib
+import json
 import pickle
+import re
+from typing import Dict, Any
+
 import Bio.PDB.Structure
 from Bio import PDB
 import numpy as np
@@ -237,3 +242,52 @@ def struct2seq(struct: Bio.PDB.Structure):
                 s += d3to1[res.resname]
 
         return s
+
+def pretty_args_filename(args: Dict[str, Any],
+                         *,
+                         max_len: int = 200,
+                         kv_sep: str = '-',
+                         pair_sep: str = '__') -> str:
+    """
+    Convert a dict of script arguments into a readable, deterministic,
+    filename-safe string that highlights the arguments used.
+
+    Rules:
+    - Keys sorted alphabetically for determinism.
+    - Simple scalar values are used verbatim; complex values are JSON-compact encoded.
+    - Booleans become "true"/"false"; None becomes "none".
+    - Non-alnum characters replaced with underscore; repeated underscores collapsed.
+    - If result exceeds max_len, trim and append a short SHA1 hash suffix to avoid collisions.
+    """
+    def norm_val(v: Any) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if v is None:
+            return "none"
+        if isinstance(v, (int, float, str)):
+            return str(v)
+        # for lists, tuples, dicts, and other complex types use compact JSON
+        return json.dumps(v, sort_keys=True, separators=(',', ':'))
+
+    parts = []
+    for k in sorted(args.keys()):
+        key = str(k)
+        val = norm_val(args[k])
+        # small prettification: shorten common separators in values (optional)
+        # build "key-kv_sep-value" but keep pair_sep between pairs
+        parts.append(f"{key}{kv_sep}{val}")
+
+    raw = pair_sep.join(parts)
+
+    # sanitize: allow letters, digits, dot, dash, underscore
+    safe = re.sub(r'[^A-Za-z0-9._-]', '_', raw)
+    safe = re.sub(r'_+', '_', safe).strip('_')
+
+    if len(safe) <= max_len:
+        return safe
+
+    # truncated with hash suffix
+    h = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:10]
+    keep = max_len - 1 - len(h)
+    truncated = safe[:keep].rstrip('_')
+    return f"{truncated}_{h}"

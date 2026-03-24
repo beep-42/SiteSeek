@@ -5,17 +5,20 @@ see the README.md.
 """
 import array
 import concurrent
+import json
 import lzma
 import multiprocessing
 import pickle
+import random
 import sys
 import time
+from argparse import ArgumentError
 from bisect import bisect_left
 from collections import defaultdict, namedtuple
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, List, Literal, Tuple, Dict, Callable
+from typing import Optional, List, Literal, Tuple, Dict, Callable, Any
 import re
 
 import line_profiler
@@ -35,7 +38,7 @@ from BaseKMerFilter import BaseKMerFilter
 from BaseRefiner import BaseRefiner
 from DummyClustering import DummyClustering
 from HardKMerFilter import HardKMerFilter
-from Helpers import d3to1
+from Helpers import d3to1, pretty_args_filename
 from ICPRefiner import ICP
 from KMerMapper import KmerMapperNumpy, KmerMapperArray
 from KmerGen import *
@@ -436,6 +439,139 @@ class Database:
                                 n_jobs = n_jobs,
                                 memory_split = memory_split)
 
+    def estimate_background_distribution(self,
+                                         background_estimation_set_path: str,
+                                         search_kwargs: Dict[str, Any],
+                                         sub_sample: float = 1.0,
+                                         k_parts: int = None,
+                                         length: int = None,
+                                         n_permutations: int = 1) -> None:
+        """
+        Estimates the background distribution of the found results (under simplified assumptions of randomness of results).
+
+        Given a json file with db IDS and their respective pocket residues listed, sequences and residue positions
+        are split to k parts which are permuted and the arising new structures are searched in the DB.
+        """
+
+        if k_parts is None and length is None:
+            raise ArgumentError("Either k_parts or length must be specified.")
+
+        est_set = json.load(open(background_estimation_set_path))
+        sub_est_set = random.sample(sorted(est_set.keys()), int(len(est_set) * sub_sample))
+
+        distribution_samples = list() # contains [query length, hit length, score]
+
+        try:
+            for structure_id in tqdm(sub_est_set):
+
+                if structure_id not in self.ids:
+                    print("The background estimation set has to be part of the "
+                            f"current database, skipping {structure_id}...")
+                    continue
+
+                # if random.random() > sub_sample: continue # skip randomly
+
+                db_id = self.pdb_code_to_index[structure_id]
+                positions = self.pos_vectors[db_id]
+                sequence = self.sequences[db_id]
+                delimitations = self.delimitations[db_id]
+                site = est_set[structure_id]
+
+                if length is not None:
+                    k_parts = len(sequence) // length
+
+                for _ in range(n_permutations):
+
+                    # pure permutation is too random and yields empty background distribution
+                    # permuted_sequence = list(sequence)
+                    # random.shuffle(permuted_sequence)
+                    # permuted_sequence = ''.join(permuted_sequence)
+
+                    part_size = len(sequence) // k_parts
+                    permutation = list(range(k_parts))
+                    while permutation == list(range(k_parts)):
+                        random.shuffle(permutation)
+
+                    # random testing
+                    # nsequence = ""
+                    # npositions = [] # list(range(len(positions)))
+                    # for i in range(k_parts):
+                    #     nsequence += chr(ord('A') + i) * part_size
+                    #     npositions += [x+i*x for x in list(range(i*part_size, i*part_size + part_size))]
+                    #     if i == k_parts - 1:
+                    #         nsequence += chr(ord('A') + i) * (len(positions) - part_size * k_parts)
+                    #         npositions += [x + i*x for x in list(range(i*part_size+part_size, len(positions)))]
+                    # print(len(positions), len(npositions), len(sequence), len(nsequence))
+                    # sequence = nsequence
+                    # positions = np.array(npositions)
+
+                    # print(sequence)
+                    # print(positions)
+
+                    # sequence permutation
+                    permuted_sequence = ''.join([sequence[part_size * i:(part_size * (i + 1) if i != k_parts - 1 else -1)] for i in permutation])
+
+                    # permuting the positions requires translation invariant representation of the structure
+                    # first convert the absolute position vectors to relative translations from the previous atom
+                    relative_positions = positions.copy()
+                    prev_pos = positions[0]
+                    for i in range(len(relative_positions)):
+                        relative_positions[i] -= prev_pos
+                        prev_pos = positions[i]
+
+                    # print(relative_positions)
+
+                    # whenever we reach a k-part join we take the average relative translation - this tries to be a little
+                    # more realistic with respect to different allowed angles between various residues and solves the
+                    # problem with missing translation vector for the 1st residue
+                    permuted_relative_positions = []
+                    for i in range(k_parts):
+
+                        part = relative_positions[part_size * permutation[i]:(part_size * permutation[i] + part_size if permutation[i] != k_parts - 1 else -1)]
+
+                        # handle part joining
+                        if i == 0:
+                            part[0] = np.array([0, 0, 0]) # the first residue isn't offset
+                        elif permutation[i - 1] != k_parts - 1:
+                            # take the average of the position offset between the current first and the next residue after
+                            # the end of the previous chain
+                            part[0] += relative_positions[permutation[i-1] * part_size + part_size]
+                            part[0] /= 2
+
+                        permuted_relative_positions.append(part)
+
+                    permuted_relative_positions = np.vstack(permuted_relative_positions)
+                    # print(permuted_relative_positions.shape)
+
+                    # convert to absolute positions
+                    absolute_permuted_positions = permuted_relative_positions
+                    prev_pos = permuted_relative_positions[0]
+                    # print(absolute_permuted_positions.shape)
+                    for i in range(len(absolute_permuted_positions)):
+                        absolute_permuted_positions[i] += prev_pos
+                        prev_pos = absolute_permuted_positions[i]
+
+                    # print("Pos length:", len(absolute_permuted_positions))
+                    # print("Seq length:", len(permuted_sequence))
+                    results = self.search(None, site, positions=absolute_permuted_positions, sequence=permuted_sequence,
+                                          delimitations=delimitations, **search_kwargs)
+
+                    # print(permuted_sequence)
+                    # print(absolute_permuted_positions)
+
+                    for result in results:
+                        # print(result)
+                        if result.structure_id == structure_id:
+                            print("Warning: Original structure recovered!", file=sys.stderr)
+                        distribution_samples.append([len(site), len(self.sequences[result.database_id]), result.score])
+
+        except KeyboardInterrupt:
+            print("Interrupted, saving current progress...", file=sys.stderr)
+
+
+        with open(f'test-background-distribution-samples-{pretty_args_filename(search_kwargs)}.json', 'w') as file:
+            json.dump(distribution_samples, file)
+
     @staticmethod
     def _structure_to_pos(structure):
         """Converts pdb structure to np array of positions"""
@@ -542,7 +678,7 @@ class Database:
         return resulting_mapping
 
 
-    @line_profiler.profile
+    # @line_profiler.profile
     def search_pipe(self, template_positions: list[np.ndarray],
                     seq: str,
                     delimitations: SeqChainDelimitation,
@@ -553,7 +689,8 @@ class Database:
                     mapper: BaseMapper,
                     refiner: BaseRefiner,
                     search_subset: Optional[List[str]] = None,
-                    progress: bool = False) -> List[Result]: # dict[str, Result]:
+                    progress: bool = False,
+                    api: bool = False) -> List[Result]: # dict[str, Result]:
 
         """
         Calculates scores for each structure ID supplied in ids_to_score list. Structures that do not receive any score
@@ -584,6 +721,7 @@ class Database:
         algorithm
         :param top_k: How many top hits for each Kmer to consider during clustering. None = consider all.
         :param ids_to_score: list of ids to score against the query
+        :param api: If enabled, the function yields current search progress as a string.
 
         :return: A dictionary of dicts of scores and found rotation, translation and mapping (when applicable) for
         each ID from the ids_to_score list.
@@ -601,14 +739,21 @@ class Database:
 
         # PART 1: K-mer filtering
         subset: Optional[List[int]] = [self.pdb_code_to_index[x] for x in search_subset] if search_subset is not None else None
+        # if api:
+        #     all_seq, kmer_found = yield from filter.search_kmers(self, kmer_tuple, kmers_dict, rated_kmers_dict=scored_kmer_dict, use_subset=subset, api=True)
+        # else:
         all_seq, kmer_found = filter.search_kmers(self, kmer_tuple, kmers_dict, rated_kmers_dict=scored_kmer_dict, use_subset=subset)
+
         # print(f"Total identifier by kmer pref-filter: {len(all_seq)}")
 
         # PART 2: CLUSTERING
         clustering.set_template(template_positions, site)
+        # if api:
+        #     accepted_clusters = yield from clustering.cluster(all_seq, self.pos_vectors, self.sequences,
+        #                                            all_kmers, rated_kmer_dict=scored_kmer_dict, api=api)
+        # else:
         accepted_clusters = clustering.cluster(all_seq, self.pos_vectors, self.sequences,
-                                               all_kmers, rated_kmer_dict=scored_kmer_dict)
-
+                                                   all_kmers, rated_kmer_dict=scored_kmer_dict, api=api)
 
         # PART 3: MAPPING
         kmers: List[str] = generate_kmers(seq)
@@ -619,11 +764,11 @@ class Database:
         results: List[Result] = []
 
         total_evaluated = 0
-        one_percent = max(int(len(accepted_clusters) / 100), 1)
+        # one_percent = max(int(len(accepted_clusters) / 100), 1)
         for cluster in accepted_clusters if not progress else tqdm(accepted_clusters, desc='Evaluating hits'):
             total_evaluated += 1
-            if total_evaluated % one_percent == 0:
-                yield f'{total_evaluated / len(accepted_clusters) * 100}\n'
+            # if total_evaluated % one_percent == 0:
+            # if api: yield f'{total_evaluated / len(accepted_clusters) * 100:.2f}\n'
 
             hit = list(cluster.keys())[0]  # seq. index
 
@@ -676,7 +821,7 @@ class Database:
             votes_ratio = len(mapping) / len(site)
             score = score_hit(found_kmer_fraction, mapping_coverage, votes_ratio,
                               self.pos_vectors[hit], template_positions, self.sequences[hit], seq, site, mapping,
-                              rot, trans)
+                              rot, trans, rmsd)
 
             results.append(
                 Result(self.ids[hit], hit, score, rmsd, rot, trans, self._convert_mapping(hit, delimitations, mapping), mapping)
@@ -688,7 +833,7 @@ class Database:
             #     results[self.ids[hit]].trans = trans
             #     results[self.ids[hit]].mapping = mapper
             #     results[self.ids[hit]].database_id = self.ids[hit]
-
+        # print(f"Found {len(results)} results.")
         return results
 
 
@@ -696,7 +841,7 @@ class Database:
                search_subset: list[str] | None = None, positions: np.typing.NDArray = None, sequence: str = None,
                delimitations: SeqChainDelimitation | None = None,
                lr: float = 0.9, skip_clustering: bool = False, skip_icp: bool = False,
-               ransac_min: int = 15, progress: bool = True) -> List[Result]:
+               ransac_min: int = 15, progress: bool = True, api: bool = False) -> List[Result]:
         """
         Searches the database for similar substructures. The query is provided using Biopython's structure and indices
         of aminoacids forming the query substructures. The searched regions can be discontinuous.
@@ -711,6 +856,7 @@ class Database:
         :param search_subset: If only a subset of the database should be searched, provide the structure IDs of such
         subset.
         :progress: Whether to display a progress bar.
+        :api: If enabled yields the progress of the search as a string.
 
         :return: A list of Results.
         """
@@ -729,19 +875,19 @@ class Database:
         # filtering = HardKMerFilter(k_mer_min_found_fraction=.5)
         filtering =  SoftKMerFilter(overall_required_similarity=lr)
 
-        clustering = ClusteringOptics(cavity_scale_error=1.1,
+        clustering = ClusteringOptics(cavity_scale_error=1.2,
                                       min_kmer_in_cavity_fraction=.01,
                                       top_k=3)
         if skip_clustering: clustering = DummyClustering(top_k=3)
 
-        mapper = RandomConsensusMapper(allowed_error=.15,
-                                       rounds=1500,
+        mapper = RandomConsensusMapper(allowed_error=.25,
+                                       rounds=3000,
                                        stop_at=ransac_min,
                                        polygon=3)
         refiner = ICP(rounds=3, cutoff=10) if not skip_icp else None
 
         return self.search_pipe(positions, sequence, delimitations, converted_site, k_mer_similarity_threshold, filtering, clustering,
-                                mapper, refiner, search_subset=search_subset, progress=progress)
+                                mapper, refiner, search_subset=search_subset, progress=progress, api=api)
 
     def get_sequence(self, db_id):
         return self.sequences[db_id]

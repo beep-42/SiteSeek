@@ -123,5 +123,34 @@ def serve(database, compressed, host, port, debug):
 
     app.app.run(host=host, port=port, debug=debug)
 
+@cli.command(short_help='Estimates background distribution based on provided search data')
+@click.argument('database', type=click.Path(exists=True, dir_okay=False, readable=True))
+@click.argument('search_set', type=click.Path(exists=True, dir_okay=False, readable=True))
+@click.option('--compressed', default=False, is_flag=True, help='Uncompress the database file.')
+@click.option('-lr', '--likelihood-ratio', default=0.9, type=click.FloatRange(0, 2), help='The required likelihood ratio')
+@click.option('-kt', '--kmer-threshold', default=11, type=click.FloatRange(0, 20), help='The minimum required kmer similarity')
+@click.option('--no-clustering', is_flag=True, show_default=True, default=False, help='Disables the clustering and relies solely on the RANSAC algorithm.')
+@click.option('--ransac-min', default=15, show_default=True, type=click.IntRange(1, 1500), help='The minimum successful expansions to terminate the RANSAC algorithm.')
+@click.option('--no-refine', default=False, is_flag=True, type=click.BOOL, help='Skip ICP refinement.')
+
+@click.option('--sample', default=1, type=click.FloatRange(0, 10), help='The fraction to sub or over sample.')
+@click.option('--permutations', default=3, show_default=True, type=click.IntRange(1, 100), help='The number of times to permute the cavity.')
+@click.option('--unpermuted-length', default=5, type=click.IntRange(1, 100), help='The length of the unpermuted segment of primary sequence of the cavity.')
+def est_background(database, search_set, compressed, likelihood_ratio, kmer_threshold, no_clustering, ransac_min, no_refine,sample, permutations, unpermuted_length):
+    """
+    Estimates background distribution based on provided search data. In development.
+    Based on permuting the original cavity primary sequence and counting the hits (assuming all are false positive).
+    """
+    click.echo(click.style('Loading the database...', fg='yellow', bold=False), err=True)
+    db: Database = Database.load(database, compressed=compressed)
+    click.echo(click.style('Running the search...', fg='green', bold=True), err=True)
+
+    db.estimate_background_distribution(search_set,
+                                        search_kwargs={'k_mer_similarity_threshold': kmer_threshold,
+                                         'lr': likelihood_ratio, 'skip_clustering': no_clustering,
+                                         'ransac_min': ransac_min, 'skip_icp': no_refine,
+                                         'progress': False},
+                                        sub_sample=sample, n_permutations=permutations, length=unpermuted_length)
+
 if __name__ == '__main__':
     cli()
