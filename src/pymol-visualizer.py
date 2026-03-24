@@ -167,8 +167,8 @@ def show_in_pymol(pdb_id1: str,
     mapping_sel1 = " or ".join([f"resi {r}" for r in sorted(mapping.keys())])
     mapping_sel2 = " or ".join([f"resi {r}" for r in sorted(mapping.values())])
 
-    cmd.select("mapping_site1", f"model {pdb_id1} and ({mapping_sel1})")
-    cmd.select("mapping_site2", f"model {new_object_name} and ({mapping_sel2})")
+    cmd.select("mapping_site1", f"model {pdb_id1} and ({mapping_sel2})")
+    cmd.select("mapping_site2", f"model {new_object_name} and ({mapping_sel1})")
     cmd.show("sticks", "mapping_site1")
     cmd.show("sticks", "mapping_site2")
     cmd.color("blue", "mapping_site1")
