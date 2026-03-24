@@ -35,7 +35,8 @@ class HardKMerFilter(BaseKMerFilter):
         self.k_mer_min_found_fraction = k_mer_min_found_fraction
 
 
-    def search_kmers(self, db: object, kmer_tuple: Tuple[str], kmers_dict: Dict[str, List[str]], rated_kmers_dict: Dict[str, Dict[str, int]], use_subset: List[int] = None)\
+    def search_kmers(self, db: object, kmer_tuple: Tuple[str], kmers_dict: Dict[str, List[str]],
+                     rated_kmers_dict: Dict[str, Dict[str, int]], use_subset: List[int] = None, api: bool = False)\
             -> (List[int], Dict[int, int]):
         """
         Searches all sequences in the given Database. Each one needs to contain at least one similar K-mer to every key
@@ -47,6 +48,7 @@ class HardKMerFilter(BaseKMerFilter):
             kmers_dict (dict[str, list[str]]): the dictionary mapping cavity K-mers to all similar alternatives.
             :param rated_kmers_dict: Not used, for API reasons.
             use_subset (list[int]): if supplied it specifies only the subset of the database to be searched.
+            :param api: Enable API mode.
         """
 
         all_seqs = {x: 0 for x in range(len(db.sequences))} if use_subset is None else {x: 0 for x in use_subset}
@@ -54,6 +56,8 @@ class HardKMerFilter(BaseKMerFilter):
         max_incorrect = len(kmers_dict) - int(self.k_mer_min_found_fraction * len(kmers_dict))
 
         for i, km in enumerate(kmers_dict):  # find all that have at least threshold% of k-mers
+
+            if api: yield f'{i/len(kmers_dict)*100:.2f}'
 
             found = set()
             for one in kmers_dict[km]:

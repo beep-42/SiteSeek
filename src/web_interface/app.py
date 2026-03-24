@@ -43,8 +43,8 @@ def generate_search_function(database, pdb_id, residues):
 
     try:
         t = timer()
-        results = yield from app.config['database'].search(pdb_id, site=site, k_mer_similarity_threshold=11, lr=.9,
-                            skip_clustering=False, skip_icp=False, ransac_min=15)
+        results = yield from app.config['database'].search(pdb_id, site=site, k_mer_similarity_threshold=13, lr=.9,
+                            skip_clustering=False, skip_icp=False, ransac_min=len(site), api=True)
         yield f'Done in {timer() - t :.{2}f} seconds. Found {len(results)} results.\n'
 
         # output.write(json.dumps(results))
@@ -73,5 +73,5 @@ def search():
         mimetype="text/plain"
     )
 
-if __name__ == "__main__":
-    app.run(debug=True)
+# if __name__ == "__main__":
+#     app.run(debug=True)

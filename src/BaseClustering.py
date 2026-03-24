@@ -7,7 +7,7 @@ class BaseClustering(ABC):
 
     @abstractmethod
     def cluster(self, candidate_ids: list[int], positions_3d: NDArray, sequences: List[str], all_possible_kmers: List[str],
-                rated_kmer_dict: Optional[Dict[str, dict[str, int]]] = None) -> List[Dict[int, List[int]]]:
+                rated_kmer_dict: Optional[Dict[str, dict[str, int]]] = None, api: bool = False) -> List[Dict[int, List[int]]]:
         pass
 
 

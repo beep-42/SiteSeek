@@ -3,6 +3,7 @@ import numpy as np
 from BaseClustering import BaseClustering
 from KmerGen import generate_kmers
 from sklearn.cluster import OPTICS
+from sklearn.cluster import DBSCAN
 from numpy.typing import NDArray
 import warnings
 
@@ -63,11 +64,12 @@ class ClusteringOptics(BaseClustering):
         # scale by the accepted cavity error (usually >= 1)
         max_distance *= self.cavity_scale_error
 
-        self.optics = OPTICS(min_samples=3, max_eps=max_distance)
+        self.optics = OPTICS(min_samples=3, max_eps=max_distance, min_cluster_size=3)
         self.site_size = len(site_indices)
 
     def cluster(self, candidate_ids: list[int], positions_3d: np.ndarray, sequences: list[str],
-                all_possible_kmers: list[str], rated_kmer_dict: dict[str, dict[str, int]] = None) -> dict[int: list[int]]:
+                all_possible_kmers: list[str], rated_kmer_dict: dict[str, dict[str, int]] = None,
+                api: bool = False) -> dict[int: list[int]]:
         """
         Cluster the given
         """
@@ -80,7 +82,9 @@ class ClusteringOptics(BaseClustering):
         # TODO: Change the dict to a tuple?
         accepted_clusters: list[dict[int, list[int]]] = []
 
-        for candidate in candidate_ids: # tqdm(candidate_ids, desc='Clustering'):
+        for candidate_i, candidate in enumerate(candidate_ids): # tqdm(candidate_ids, desc='Clustering'):
+
+
 
             if self.top_k is None:
                 # find valid positions

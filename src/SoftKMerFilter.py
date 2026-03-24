@@ -15,7 +15,8 @@ class SoftKMerFilter(BaseKMerFilter):
 
     def search_kmers(self, db: object, kmer_tuple: Tuple[str], kmers_dict: Dict[str, List[str]],
                      rated_kmers_dict: Dict[str, Dict[str, int]],
-                     use_subset: Optional[List[int]] = None) -> (List[int], Dict[int, int]):
+                     use_subset: Optional[List[int]] = None,
+                     api: bool = False) -> (List[int], Dict[int, int]):
 
         # Pipeline: Create a np.uint16 array of feasible size, for each K-mer, find hits, add their scores
         # measure self mapping score
@@ -31,7 +32,10 @@ class SoftKMerFilter(BaseKMerFilter):
 
         # search the entire database
         if use_subset is None:
-            for kmer in kmers_dict:
+            for i, kmer in enumerate(kmers_dict):
+                # if api:
+                #     yield f'{i/len(kmers_dict)*100:.2f}\n'
+
                 seen: Dict[int, int] = defaultdict(int)
                 for alternative_kmer in kmers_dict[kmer]:
                     if len(db.kmer_db[alternative_kmer]): # db.kmer_db.has_any_ids(alternative_kmer):
@@ -55,7 +59,9 @@ class SoftKMerFilter(BaseKMerFilter):
             for i in range(len(use_subset)):
                 reverse_subset[use_subset[i]] = i
 
-            for kmer in kmers_dict:
+            for i, kmer in enumerate(kmers_dict):
+                # if api: yield f'{i/len(kmers_dict)*100:.2f}\n'
+
                 seen: Dict[int, int] = defaultdict(int)
                 for alternative_kmer in kmers_dict[kmer]:
                     if len(db.kmer_db[alternative_kmer]): #  db.kmer_db.has_any_ids(alternative_kmer):

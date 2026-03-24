@@ -6,7 +6,7 @@ class BaseKMerFilter (ABC):
 
     @abstractmethod
     def search_kmers(self, db: object, kmer_tuple: Tuple[str], kmers_dict: Dict[str, List[str]], rated_kmers_dict: Dict[str, Dict[str, int]], \
-                     use_subset: Optional[List[int]] = None) \
+                     use_subset: Optional[List[int]] = None, api: bool = False) \
         -> (List[int], Dict[int, int]):
         """
         Filters the sequences in the database.
@@ -16,6 +16,7 @@ class BaseKMerFilter (ABC):
         :param kmers_dict: The dictionary containing the searched kmers alternatives
         :param rated_kmers_dict: The dictionary mapping Kmers to their all their allowed alternatives and their scores.
         :param use_subset: The subset of the Database ids to consider. None means all ids are considered.
+        :param api: When enabled yields the filtering progress as a string.
 
         Return:
             List[int]: all sequence IDs that passed the filter.

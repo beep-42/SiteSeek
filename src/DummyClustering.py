@@ -19,7 +19,7 @@ class DummyClustering(BaseClustering):
 
 
     def cluster(self, candidate_ids: list[int], positions_3d: np.ndarray, sequences: list[str],
-                all_possible_kmers: list[str], rated_kmer_dict: dict[str, dict[str, int]] = None)\
+                all_possible_kmers: list[str], rated_kmer_dict: dict[str, dict[str, int]] = None, api: bool = False)\
             -> dict[int: list[int]]:
 
         # test - one giant cluster
