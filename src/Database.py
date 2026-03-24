@@ -554,8 +554,12 @@ class Database:
 
                     # print("Pos length:", len(absolute_permuted_positions))
                     # print("Seq length:", len(permuted_sequence))
-                    results = self.search(None, site, positions=absolute_permuted_positions, sequence=permuted_sequence,
-                                          delimitations=delimitations, **search_kwargs)
+                    try:
+                        results = self.search(None, site, positions=absolute_permuted_positions, sequence=permuted_sequence,
+                                              delimitations=delimitations, **search_kwargs)
+                    except Exception as e:
+                        print("Raised exception while searching:", e, "\nContinuing...", file=sys.stderr)
+                        continue
 
                     # print(permuted_sequence)
                     # print(absolute_permuted_positions)
