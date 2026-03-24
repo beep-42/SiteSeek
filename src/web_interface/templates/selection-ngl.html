@@ -105,6 +105,27 @@
             </button>
           </div>
         </div>
+        <!-- Selected Residue / Ligand Card -->
+        <div id="selectedCard" class="card mb-2" style="display:none;">
+          <div class="card-header">Selected Residue</div>
+          <div class="card-body">
+            <p><strong>Type:</strong> <span id="selType"></span></p>
+            <p><strong>Chain:</strong> <span id="selChain"></span> &nbsp; <strong>Res#:</strong> <span id="selResno"></span></p>
+            <p><strong>Name:</strong> <span id="selName"></span></p>
+
+            <div id="ligandControls" style="display:none;">
+              <label for="cutoffRange" class="form-label">Contact cutoff: <span id="cutoffVal">4</span> Å</label>
+              <input type="range" class="form-range" id="cutoffRange" min="1" max="10" step="0.1" value="4">
+              <div class="d-grid mt-2">
+                <button id="selectContactsBtn" class="btn btn-primary btn-sm">Select contacts</button>
+              </div>
+            </div>
+
+            <div id="residueControls" style="display:none;">
+              <small class="text-muted">Click a ligand to enable contact selection.</small>
+            </div>
+          </div>
+        </div>
         <!-- Hit Info Card -->
         <div id="hitDetailsCard" class="card mb-2" style="display: none;">
           <div class="card-header">
@@ -153,6 +174,9 @@
 
     let currentlyLoadedPdbId;
 
+    let selected = null; // { atom: pickingProxy.atom, isLigand: bool }
+    let cutoffDefault = 4.0;
+
     // disable zoom on click for atoms
     stage.mouseControls.remove('clickPick-left', NGL.MouseActions.movePick)
 
@@ -171,6 +195,17 @@
     const hitRmsdEl   = document.getElementById("hitRmsd");
     const hitMappingEl= document.getElementById("hitMapping");
     const hitTitleEl  = document.getElementById("hitTitle");
+
+    const selectedCard = document.getElementById('selectedCard');
+    const selType = document.getElementById('selType');
+    const selChain = document.getElementById('selChain');
+    const selResno = document.getElementById('selResno');
+    const selName = document.getElementById('selName');
+    const ligandControls = document.getElementById('ligandControls');
+    const residueControls = document.getElementById('residueControls');
+    const cutoffRange = document.getElementById('cutoffRange');
+    const cutoffVal = document.getElementById('cutoffVal');
+    const selectContactsBtn = document.getElementById('selectContactsBtn');
 
 
     // Toast helper
@@ -237,34 +272,64 @@
 
 
         // Enable picking
-        stage.signals.clicked.add((pickingProxy) => {
-            if (pickingProxy && pickingProxy.atom && !pickingProxy.atom.hetero) {
+      stage.signals.clicked.add((pickingProxy) => {
+          if (!pickingProxy || !pickingProxy.atom) return;
 
-                let resNo = pickingProxy.atom.residue.resno;
-                let chain = pickingProxy.atom.chainname;
-                let object_id = pickingProxy.atom.structure.id;
-                let key = `${chain}_${resNo}`;
+          // Only allow interactions for the currently loaded structure
+          const object_id = pickingProxy.atom.structure.id;
+          if (object_id.toUpperCase() != currentlyLoadedPdbId.toUpperCase()) return;
 
-                // disable picking atoms of non-query structure
-                if (object_id != currentlyLoadedPdbId) {
-                    return;
-                }
+          // Show the selected card for any picked atom/residue
+          showSelectedCard(pickingProxy.atom);
+          // If it's protein atom, keep the existing toggle-selection behavior
+          if (!pickingProxy.atom.hetero) {
+            let resNo = pickingProxy.atom.residue.resno;
+            let chain = pickingProxy.atom.chainname;
+            let key = `${chain}_${resNo}`;
 
-                if (selectionSet.has(key)) {
-                    selectionSet.delete(key);
-                    queryComp.removeRepresentation(reprMap[key]);
-                } else {
-                    selectionSet.add(key);
-                    reprMap[key] = queryComp.addRepresentation("surface", {
-                        sele: `${resNo}:${chain}`,
-                        name: key,
-                        color: "red",
-                        scale: 3
-                    });
-                }
-                updateSelectionDisplay();
+            if (selectionSet.has(key)) {
+              selectionSet.delete(key);
+              queryComp.removeRepresentation(reprMap[key]);
+            } else {
+              selectionSet.add(key);
+              reprMap[key] = queryComp.addRepresentation("surface", {
+                sele: `${resNo}:${chain}`,
+                name: key,
+                color: "red",
+                scale: 3
+              });
             }
+            updateSelectionDisplay();
+          }
         });
+        // stage.signals.clicked.add((pickingProxy) => {
+        //     if (pickingProxy && pickingProxy.atom && !pickingProxy.atom.hetero) {
+        //
+        //         let resNo = pickingProxy.atom.residue.resno;
+        //         let chain = pickingProxy.atom.chainname;
+        //         let object_id = pickingProxy.atom.structure.id;
+        //         let key = `${chain}_${resNo}`;
+        //
+        //         // disable picking atoms of non-query structure
+        //         if (object_id.toUpperCase() != currentlyLoadedPdbId.toUpperCase()) {
+        //             return;
+        //         }
+        //
+        //         if (selectionSet.has(key)) {
+        //             selectionSet.delete(key);
+        //             queryComp.removeRepresentation(reprMap[key]);
+        //         } else {
+        //             selectionSet.add(key);
+        //             reprMap[key] = queryComp.addRepresentation("surface", {
+        //                 sele: `${resNo}:${chain}`,
+        //                 name: key,
+        //                 color: "red",
+        //                 scale: 3
+        //             });
+        //         }
+        //         updateSelectionDisplay();
+        //     }
+        // });
 
         showToast(`Structure ${currentlyLoadedPdbId} loaded.`, 'success');
         ctrlQuery.textContent = currentlyLoadedPdbId;
@@ -297,6 +362,112 @@
         queryComp.removeRepresentation(reprMap[key]);
       });
       selectionSet.clear();
+      updateSelectionDisplay();
+    });
+
+    cutoffRange.addEventListener('input', () => {
+      cutoffVal.textContent = cutoffRange.value;
+    });
+
+    function showSelectedCard(atomProxy) {
+      if (!atomProxy) {
+        selectedCard.style.display = 'none';
+        selected = null;
+        return;
+      }
+      selectedCard.style.display = 'block';
+      const residue = atomProxy.residue;
+      const isLigand = !!atomProxy.hetero; // hetero indicates non-protein (ligand)
+      selected = { atom: atomProxy, isLigand };
+
+      selType.textContent = isLigand ? 'Ligand' : 'Residue';
+      selChain.textContent = atomProxy.chainname || '';
+      selResno.textContent = residue.resno || '';
+      selName.textContent = residue.name || atomProxy.atomname || '';
+
+      if (isLigand) {
+        ligandControls.style.display = 'block';
+        residueControls.style.display = 'none';
+      } else {
+        ligandControls.style.display = 'none';
+        residueControls.style.display = 'block';
+      }
+    }
+
+   selectContactsBtn.addEventListener('click', () => {
+      if (!selected || !selected.isLigand) return;
+      const cutoff = parseFloat(cutoffRange.value);
+      const cutoff2 = cutoff * cutoff;
+
+      const structure = queryComp.structure; // NGL.Structure
+      const atomCount = structure.atomCount;
+
+      // Identify ligand atoms by iterating atom proxies
+      const litChain = selected.atom.chainname;
+      const litResno = selected.atom.resno;
+      const litResname = selected.atom.resname;
+
+      const ligandAtomIndices = [];
+      for (let i = 0; i < atomCount; ++i) {
+        const ap = structure.getAtomProxy(i);
+        if (ap.hetero && ap.chainname === litChain && ap.resno === litResno && ap.resname === litResname) {
+          ligandAtomIndices.push(i);
+        }
+      }
+
+      if (ligandAtomIndices.length === 0) {
+        alert('No ligand atoms found for the selected ligand.');
+        return;
+      }
+
+      // Build coordinates arrays by reading proxies (safe across versions)
+      const xs = new Float32Array(atomCount);
+      const ys = new Float32Array(atomCount);
+      const zs = new Float32Array(atomCount);
+      for (let i = 0; i < atomCount; ++i) {
+        const ap = structure.getAtomProxy(i);
+        xs[i] = ap.x;
+        ys[i] = ap.y;
+        zs[i] = ap.z;
+      }
+
+      const residuesToAdd = new Set();
+
+      for (let i = 0; i < atomCount; ++i) {
+        const xi = xs[i], yi = ys[i], zi = zs[i];
+        for (let j = 0; j < ligandAtomIndices.length; ++j) {
+          const li = ligandAtomIndices[j];
+          const xl = xs[li], yl = ys[li], zl = zs[li];
+          const dx = xi - xl, dy = yi - yl, dz = zi - zl;
+          const d2 = dx*dx + dy*dy + dz*dz;
+          if (d2 <= cutoff2) {
+            const ap = structure.getAtomProxy(i);
+            const key = `${ap.chainname}_${ap.resno}`;
+            // skip the ligand's own residue
+            if (!(ap.chainname === litChain && ap.resno === litResno && ap.resname === litResname)) {
+              console.log(ap);
+              if (!ap.hetero && ap.structure.id.toUpperCase() ==  currentlyLoadedPdbId.toUpperCase()) {
+                residuesToAdd.add(key);
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // Add representations for found residues
+      for (const key of residuesToAdd) {
+        if (!selectionSet.has(key)) {
+          selectionSet.add(key);
+          const [chain, resno] = key.split('_');
+          reprMap[key] = queryComp.addRepresentation("surface", {
+            sele: `${resno}:${chain}`,
+            name: key,
+            color: "red",
+            scale: 3
+          });
+        }
+      }
       updateSelectionDisplay();
     });
 
