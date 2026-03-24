@@ -445,7 +445,8 @@ class Database:
                                          sub_sample: float = 1.0,
                                          k_parts: int = None,
                                          length: int = None,
-                                         n_permutations: int = 1) -> None:
+                                         n_permutations: int = 1,
+                                         output_path_prefix: str = '') -> None:
         """
         Estimates the background distribution of the found results (under simplified assumptions of randomness of results).
 
@@ -569,7 +570,7 @@ class Database:
             print("Interrupted, saving current progress...", file=sys.stderr)
 
 
-        with open(f'test-background-distribution-samples-{pretty_args_filename(search_kwargs)}.json', 'w') as file:
+        with open(f'{output_path_prefix}test-background-distribution-samples-{pretty_args_filename(search_kwargs)}.json', 'w') as file:
             json.dump(distribution_samples, file)
 
     @staticmethod

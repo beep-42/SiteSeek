@@ -136,7 +136,9 @@ def serve(database, compressed, host, port, debug):
 @click.option('--sample', default=1, type=click.FloatRange(0, 10), help='The fraction to sub or over sample.')
 @click.option('--permutations', default=3, show_default=True, type=click.IntRange(1, 100), help='The number of times to permute the cavity.')
 @click.option('--unpermuted-length', default=5, type=click.IntRange(1, 100), help='The length of the unpermuted segment of primary sequence of the cavity.')
-def est_background(database, search_set, compressed, likelihood_ratio, kmer_threshold, no_clustering, ransac_min, no_refine,sample, permutations, unpermuted_length):
+@click.option('--output-prefix', default='', type=click.STRING, help='The prefix of the output file.')
+def est_background(database, search_set, compressed, likelihood_ratio, kmer_threshold, no_clustering, ransac_min,
+                   no_refine,sample, permutations, unpermuted_length, output_prefix):
     """
     Estimates background distribution based on provided search data. In development.
     Based on permuting the original cavity primary sequence and counting the hits (assuming all are false positive).
@@ -150,7 +152,8 @@ def est_background(database, search_set, compressed, likelihood_ratio, kmer_thre
                                          'lr': likelihood_ratio, 'skip_clustering': no_clustering,
                                          'ransac_min': ransac_min, 'skip_icp': no_refine,
                                          'progress': False},
-                                        sub_sample=sample, n_permutations=permutations, length=unpermuted_length)
+                                        sub_sample=sample, n_permutations=permutations, length=unpermuted_length,
+                                        output_path_prefix=output_prefix)
 
 if __name__ == '__main__':
     cli()
