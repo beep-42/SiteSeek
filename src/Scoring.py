@@ -8,7 +8,7 @@ def rmsd_to_score(x):
 
 @line_profiler.profile
 def score_hit(found_kmer_fraction: float, coverage, mapped_ratio, hit_positions, query_positions, hit_seq,
-              query_seq, query_site, mapping, rot, trans):
+              query_seq, query_site, mapping, rot, trans, icp_rmsd):
 
 
     (full_site_mapping, full_site_rmsd, full_site_rot, full_site_trans,
@@ -26,4 +26,4 @@ def score_hit(found_kmer_fraction: float, coverage, mapped_ratio, hit_positions,
     # use the pseudo counted inverse of full_site_rmsd
     # return 1 / (full_site_rmsd+0.01) # * (100 ** found_kmer_fraction - 1)
     # return rmsd_to_score(full_site_rmsd) * found_kmer_fraction * 100
-    return rmsd_to_score(full_site_rmsd)
+    return rmsd_to_score(icp_rmsd)
